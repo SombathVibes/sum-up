@@ -1,0 +1,12 @@
+.tgcloud/
+node_modules/
+tgcloud/lib/config.js
+sync-helper/node_modules/
+sync-helper/.wrangler/
+.dev.vars
+
+# old project secrets and local files
+.env*
+.idea/
+dist/
+dev/local.db*

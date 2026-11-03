@@ -1,0 +1,8 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sumup-sync",
+  "main": "src/index.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"]
+  // Secrets: TG_API_ID, TG_API_HASH, TG_SESSION, SYNC_SECRET (npx wrangler secret put <NAME>)
+}
