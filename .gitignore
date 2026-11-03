@@ -10,3 +10,7 @@ sync-helper/.wrangler/
 .idea/
 dist/
 dev/local.db*
+
+# graphify: the graph is rebuilt locally by git hooks; machine-specific Claude Code hooks
+graphify-out/
+.claude/settings.local.json
