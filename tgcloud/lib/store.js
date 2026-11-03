@@ -186,3 +186,18 @@ export async function latestTgMessageId(groupId) {
   const row = await db.get(sql`SELECT MAX(tg_message_id) AS id FROM messages WHERE group_id = ${groupId}`);
   return row?.id ?? 0;
 }
+
+/**
+ * Payments in a range for the Mini App, newest first, optionally only those
+ * whose text contains `q`: { items: [{ date, amount, currency, botTgId, text }], total }.
+ */
+export async function paymentsPage(groupId, range, { q = '', offset = 0, limit = 50 } = {}) {
+  const filter = q ? sql`AND original_message LIKE ${`%${q}%`}` : sql.raw('');
+  const where = sql`group_id = ${groupId} AND message_date BETWEEN ${range.start} AND ${range.end} ${filter}`;
+  const items = await db.all(sql`
+    SELECT message_date AS date, amount, currency, bot_tg_id AS botTgId, original_message AS text
+    FROM messages WHERE ${where}
+    ORDER BY message_date DESC LIMIT ${limit} OFFSET ${offset}`);
+  const count = await db.get(sql`SELECT COUNT(*) AS n FROM messages WHERE ${where}`);
+  return { items, total: count?.n ?? 0 };
+}

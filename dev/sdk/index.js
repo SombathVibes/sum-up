@@ -15,12 +15,31 @@ export class BotApiError extends Error {
   }
 }
 
+/** A file to upload (bytes + name), as on the platform. */
+export class InputFile {
+  constructor(bytes, name, { type = 'application/octet-stream' } = {}) {
+    this.bytes = bytes;
+    this.name = name;
+    this.type = type;
+  }
+}
+
 export async function callApi(method, params = {}) {
-  const res = await fetch(`${API_BASE}/bot${process.env.BOT_TOKEN}/${method}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(params),
-  });
+  // Top-level InputFile params go up as multipart (nested ones, e.g. in media groups, aren't needed here).
+  const hasFile = Object.values(params).some((v) => v instanceof InputFile);
+  let init;
+  if (hasFile) {
+    const form = new FormData();
+    for (const [k, v] of Object.entries(params)) {
+      if (v === undefined) continue;
+      if (v instanceof InputFile) form.append(k, new Blob([v.bytes], { type: v.type }), v.name);
+      else form.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+    }
+    init = { method: 'POST', body: form };
+  } else {
+    init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params) };
+  }
+  const res = await fetch(`${API_BASE}/bot${process.env.BOT_TOKEN}/${method}`, init);
   const body = await res.json();
   if (!body.ok) throw new BotApiError(method, body);
   return body.result;

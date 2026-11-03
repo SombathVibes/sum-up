@@ -15,6 +15,11 @@ export const WHITELIST_BOTS = {
 export const SYNC_HELPER_URL = 'https://sumup-sync.<your-subdomain>.workers.dev';
 export const SYNC_HELPER_SECRET = 'change-me';
 
+// The admin Mini App's address: https://app<app_id>.tgcloud.ai/ (printed by
+// `npm run deploy`), or an https tunnel to `npm run dev` for local testing.
+// Empty = no 🖥 Admin app button in the private panel.
+export const MINIAPP_URL = '';
+
 export const SUPPORT_LINK = 'https://t.me/sumupsp';
 export const TRIAL_MONTHS = 1;
 

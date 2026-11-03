@@ -39,6 +39,17 @@ A payment can arrive both live and through the helper. In basic groups each acco
 - Tapping a group opens its report menu and, for managers, Sync, Renew and History, without opening the group. Reports there start with the group's name, linked to the group when Telegram allows it. Buttons carry the group as `@<group id>:<data>`, and every action checks the user's role in that group.
 - Super admins also get **👥 អ្នកគ្រប់គ្រង** (see Roles).
 
+## Admin Mini App
+
+A web app inside Telegram for admins (`webapp/`, Vite + React), hosted by Telegram Serverless next to the bot.
+
+- **Groups:** search, filter (all / ending soon / expired), sort by name, days left or 30-day total, and a 30-day chart for each group.
+- **A group:** any date range (quick buttons or a date picker), KHR / USD / payment totals with the change versus the period before, a daily chart, a per-bank table, and the payments list with search and paging. **📤 CSV ទៅ chat** sends the range as a CSV file to the admin's private chat with the bot.
+- **Billing:** expired and ending-soon groups first, each group's history, and Renew (1/3/6/12 months) for managers.
+- **Login:** none to build. Telegram signs the user into the init data, the platform verifies it before an endpoint runs, and each endpoint checks the role (`tgcloud/lib/endpoint.js`): viewers see their groups, managers can renew. Outside Telegram the endpoints refuse every call.
+- **Opening it:** set `MINIAPP_URL` in `tgcloud/lib/config.js` to the address `npm run deploy` prints (`https://app<app_id>.tgcloud.ai/`), and the private admin panel gets a **🖥 Admin app** button.
+- **Endpoints** (`tgcloud/endpoints/`): `me`, `groups`, `groupReport`, `groupPayments`, `sendCsv`, `groupHistory`, `renew`. The page calls them with `Telegram.WebApp.Serverless.call` when it's hosted on `tgcloud.ai`, and with `fetch('/api/<name>')` otherwise (local testing).
+
 ## Roles
 
 | Role | Who | Can do |
@@ -84,14 +95,17 @@ tgcloud/                 deployed to Telegram Serverless
     message.js           bank-bot payments, Stars payments, commands, user picker
     callback_query.js    every button, in groups and in the private panel
     pre_checkout_query.js, subscription.js   Stars subscriptions
+  endpoints/             the admin Mini App's server side (me, groups, groupReport, …)
   lib/
     report.js, ui.js     report text and keyboards
     store.js, roles.js   database access, who may do what
     admin.js             private admin panel and team screens
     billing.js, sync.js  subscriptions, sync helper client
+    endpoint.js          caller and role checks for endpoints
     dates.js, parse.js, telegram.js
+webapp/                  admin Mini App front-end (Vite + React), built into webapp/dist
 sync-helper/             Cloudflare Worker that reads group history (mtcute)
-dev/                     local runner with a stand-in for the platform sdk
+dev/                     local runner (bot + Mini App) with a stand-in for the platform sdk
 config.example.js        template for tgcloud/lib/config.js (git-ignored)
 test/                    tests for the pure logic (npm test)
 ```
@@ -133,8 +147,9 @@ Note the `https://sumup-sync.<you>.workers.dev` URL it prints.
    ```bash
    npm install
    cp config.example.js tgcloud/lib/config.js   # set SYNC_HELPER_URL, ADMIN_IDS, payment details, and SYNC_HELPER_SECRET = SYNC_SECRET from .dev.vars
+   npm install --prefix webapp
    npx tgcloud login
-   npx tgcloud push
+   npm run deploy          # builds webapp/ and runs tgcloud push
    npx tgcloud migrate
    ```
 
@@ -155,6 +170,13 @@ npm run dev
 ```
 
 The `sdk` stand-in in `dev/sdk/` covers only what this project uses, so test on the real platform before relying on it. A bot can't use long polling while it has a webhook set; the runner tells you and only deletes the webhook with `npm run dev -- --delete-webhook`. Run one copy at a time: two pollers on one token take each other's updates.
+
+### Run the admin Mini App locally
+
+`npm run dev` also serves the built Mini App and its endpoints on `http://localhost:8790` (`dev/miniapp.js`). Build it first with `npm run build`, or run `npm run webapp` for Vite's live-reload server (it doesn't proxy `/api`, so use it for layout work).
+
+- **In a browser:** add `DEV_FAKE_USER_ID=<your Telegram id>` to `.env.local`. It stands in for Telegram's init data, but only for requests made directly on localhost.
+- **In Telegram:** Mini Apps need https, so open a tunnel (for example `cloudflared tunnel --url http://localhost:8790`), put its address in `MINIAPP_URL`, restart, and tap **🖥 Admin app** in the private panel. The runner verifies Telegram's signature on the init data (HMAC with the bot token, at most 24 hours old) the way the platform does; a forged or missing signature gets 401, and the fake user never applies through a tunnel.
 
 ### Tests and platform tools
 

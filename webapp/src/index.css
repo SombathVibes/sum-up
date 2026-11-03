@@ -1,0 +1,89 @@
+/* Telegram sets --tg-theme-* from the user's theme; the fallbacks are for a plain browser. */
+:root {
+  --bg: var(--tg-theme-bg-color, #ffffff);
+  --bg2: var(--tg-theme-secondary-bg-color, #f2f2f7);
+  --text: var(--tg-theme-text-color, #111111);
+  --muted: var(--tg-theme-hint-color, #8a8a8e);
+  --accent: var(--tg-theme-button-color, #2481cc);
+  --accent-text: var(--tg-theme-button-text-color, #ffffff);
+  --link: var(--tg-theme-link-color, #2481cc);
+  --ok: #2e9d57;
+  --warn: #d98a00;
+  --bad: #d33a2c;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tg]) {
+    --bg: var(--tg-theme-bg-color, #17212b);
+    --bg2: var(--tg-theme-secondary-bg-color, #0e1621);
+    --text: var(--tg-theme-text-color, #f5f5f5);
+    --muted: var(--tg-theme-hint-color, #8b9aa8);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg2); color: var(--text); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Khmer", sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+
+.app { min-height: 100vh; padding-bottom: 72px; }
+.header { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--bg); border-bottom: 1px solid color-mix(in srgb, var(--muted) 25%, transparent); }
+.title { font-weight: 700; font-size: 17px; }
+.grow { flex: 1; min-width: 0; }
+.content { padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+h2 { font-size: 15px; margin: 8px 0 0; }
+
+.card { display: flex; flex-direction: column; gap: 8px; width: 100%; padding: 12px; border: 0; border-radius: 12px; background: var(--bg); text-align: left; }
+button.card { cursor: pointer; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-direction: row; }
+.name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.center { padding: 40px 16px; text-align: center; }
+.big { font-size: 40px; margin: 0; }
+.error { color: var(--bad); }
+.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+.search { width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: var(--bg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { padding: 6px 12px; border: 0; border-radius: 16px; background: var(--bg); cursor: pointer; }
+.chip.on { background: var(--accent); color: var(--accent-text); }
+.dates input { flex: 1; min-width: 0; padding: 8px; border: 0; border-radius: 10px; background: var(--bg); }
+
+.badge { flex-shrink: 0; padding: 2px 8px; border-radius: 10px; font-size: 12px; background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.badge.warn { background: color-mix(in srgb, var(--warn) 15%, transparent); color: var(--warn); }
+.badge.bad { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+
+.btn { padding: 8px 14px; border: 0; border-radius: 10px; background: var(--accent); color: var(--accent-text); cursor: pointer; }
+.btn.small { padding: 6px 10px; font-size: 13px; }
+.btn.wide { width: 100%; }
+.btn:disabled { opacity: .5; }
+.icon { padding: 6px 10px; border: 0; border-radius: 10px; background: var(--bg2); cursor: pointer; }
+
+.segmented { display: flex; gap: 4px; margin: 10px 16px 0; padding: 3px; border-radius: 10px; background: color-mix(in srgb, var(--muted) 18%, transparent); }
+.segmented.small { margin: 0; }
+.segmented button { flex: 1; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; cursor: pointer; }
+.segmented button.on { background: var(--bg); font-weight: 600; }
+
+.totals { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; }
+.totals strong { display: block; font-size: 17px; }
+.up { color: var(--ok); font-size: 12px; }
+.down { color: var(--bad); font-size: 12px; }
+
+.chart { margin: 0; }
+.chart svg { display: block; width: 100%; height: 120px; }
+.chart.compact svg { height: 40px; }
+.chart rect { fill: var(--accent); }
+.chart figcaption { display: flex; justify-content: space-between; }
+
+.table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.table th, .table td { padding: 6px 4px; text-align: right; border-bottom: 1px solid color-mix(in srgb, var(--muted) 20%, transparent); }
+.table th:first-child, .table td:first-child { text-align: left; }
+
+.payments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.payments li { padding: 8px 0; border-bottom: 1px solid color-mix(in srgb, var(--muted) 15%, transparent); }
+
+.tabs { position: fixed; bottom: 0; left: 0; right: 0; display: flex; padding: 8px 16px calc(8px + env(safe-area-inset-bottom)); gap: 8px; background: var(--bg); border-top: 1px solid color-mix(in srgb, var(--muted) 25%, transparent); }
+.tabs button { flex: 1; padding: 10px; border: 0; border-radius: 10px; background: transparent; cursor: pointer; }
+.tabs button.on { background: var(--bg2); font-weight: 600; }
+.dot { margin-left: 6px; padding: 0 6px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 12px; }
+.card .chip { background: var(--bg2); }

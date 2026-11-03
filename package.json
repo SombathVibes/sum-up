@@ -6,10 +6,12 @@
     "@tgcloud/cli": "^0.2.0"
   },
   "scripts": {
-    "deploy": "tgcloud push",
+    "deploy": "npm run build && tgcloud push",
     "status": "tgcloud status",
     "run": "tgcloud run",
     "test": "node test/lib.test.js",
-    "dev": "node --env-file-if-exists=.env.local dev/run.js"
+    "dev": "node --env-file-if-exists=.env.local dev/run.js",
+    "build": "npm --prefix webapp run build",
+    "webapp": "npm --prefix webapp run dev"
   }
 }

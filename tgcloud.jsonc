@@ -1,7 +1,11 @@
 {
-  // To host a Mini App, uncomment and set "source" to its build output folder:
-  // "static": {
-  //   "source": "dist"
-  // },
+  // The admin Mini App (webapp/) is built into webapp/dist and deployed with the
+  // bot; Telegram serves it at https://app<app_id>.tgcloud.ai/ and runs the
+  // functions it calls from tgcloud/endpoints/. `npm run deploy` builds, then pushes.
+  "static": {
+    "source": "webapp/dist",
+    "spa": true,
+    "immutable": ["/assets/*"]
+  },
   "$schema": "./node_modules/@tgcloud/cli/schema/tgcloud.json"
 }

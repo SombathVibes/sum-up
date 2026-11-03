@@ -5,6 +5,7 @@
 
 import { api } from 'sdk';
 import { accessStatus } from './billing.js';
+import { MINIAPP_URL } from './config.js';
 import { dayOf, pad2 } from './dates.js';
 import {
   getAdmin, isConfigSuper, isSuper, listAdmins, managersOf, removeAdmin, rolesOf, setGroupRole, setSuper,
@@ -83,6 +84,8 @@ export async function adminPanel(user, page = 0) {
   keyboard.push(...pagerRow(p, pages, (n) => `ADMIN_P_${n}`));
   if (urgent.length) keyboard.push([btn(`⚠️ ផុតកំណត់ (${urgent.length})`, 'ADMIN_URG_0')]);
   if (superAdmin) keyboard.push([btn('👥 អ្នកគ្រប់គ្រង', 'TEAM')]);
+  // The admin Mini App (webapp/), once its address is in config.
+  if (MINIAPP_URL) keyboard.push([{ text: '🖥 Admin app', web_app: { url: MINIAPP_URL } }]);
   keyboard.push([btn('🔄', `ADMIN_P_${p}`), btn('បិទ', 'CLOSE')]);
   return { text: lines.join('\n'), parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } };
 }

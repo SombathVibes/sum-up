@@ -4,7 +4,8 @@
 //   BOT_TOKEN=123:abc npm run dev        (or put BOT_TOKEN in .env.local)
 //
 // Data goes to dev/local.db. Reports still call the real sync helper from
-// tgcloud/lib/config.js.
+// tgcloud/lib/config.js. The admin Mini App is served on http://localhost:8790
+// (see dev/miniapp.js); build it first with `npm run build`.
 
 import { registerHooks } from 'node:module';
 import { existsSync, readdirSync } from 'node:fs';
@@ -33,9 +34,16 @@ if (!process.env.BOT_TOKEN) {
 }
 
 const { open } = await import(SDK['sdk/db']);
-const { callApi } = await import(SDK.sdk);
+const { callApi, EndpointError } = await import(SDK.sdk);
 const dbFile = process.env.DEV_DB ?? new URL('local.db', here).pathname;
 open(dbFile, await import(new URL('schema.js', root).href));
+
+// The admin Mini App and its endpoints (DEV_MINIAPP_PORT=0 turns it off).
+const miniAppPort = Number(process.env.DEV_MINIAPP_PORT ?? 8790);
+if (miniAppPort) {
+  const { startMiniApp } = await import(new URL('miniapp.js', here).href);
+  await startMiniApp({ root, port: miniAppPort, botToken: process.env.BOT_TOKEN, EndpointError });
+}
 
 const handlers = {};
 for (const file of readdirSync(new URL('handlers/', root))) {
