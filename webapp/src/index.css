@@ -87,3 +87,11 @@ button.card { cursor: pointer; }
 .tabs button.on { background: var(--bg2); font-weight: 600; }
 .dot { margin-left: 6px; padding: 0 6px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 12px; }
 .card .chip { background: var(--bg2); }
+
+.label { display: flex; flex-direction: column; gap: 4px; }
+.field { width: 100%; padding: 9px 10px; border: 0; border-radius: 10px; background: var(--bg2); resize: vertical; }
+.btn.off { background: var(--bg2); color: var(--text); }
+.btn.danger { background: var(--bad); color: #fff; }
+.icon.wide { width: 100%; padding: 10px; }
+.tabs button { padding: 10px 4px; font-size: 13px; }
+.segmented button { white-space: nowrap; }

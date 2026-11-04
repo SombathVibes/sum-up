@@ -4,7 +4,7 @@
 // In a private chat, admins get their panel (lib/admin.js); see lib/roles.js for who may do what.
 
 import { api } from 'sdk';
-import { adminPanel, teamMemberScreen } from '../lib/admin.js';
+import { addPrompt, adminPanel, teamMemberScreen } from '../lib/admin.js';
 import { accessStatus, recordPayment, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { parseAmount } from '../lib/parse.js';
@@ -26,6 +26,11 @@ export default async function (message) {
   const inGroup = message.chat.type === 'group' || message.chat.type === 'supergroup';
 
   try {
+    // The Mini App's ➕ opens t.me/<bot>?start=addadmin: the user picker, for super admins.
+    if (!inGroup && command === 'start' && /\saddadmin\s*$/.test(message.text ?? '') && (await isSuper(message.from))) {
+      await addPrompt(chatId);
+      return;
+    }
     // Admins (super admins, and admins with at least one group) get their panel in a private chat.
     if (!inGroup && ['start', 'menu', 'admin'].includes(command)) {
       const panel = await adminPanel(message.from);

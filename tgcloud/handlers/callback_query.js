@@ -21,7 +21,8 @@ import {
 import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
-import { MANUAL_CURRENCY, MONTHLY_PRICE_CENTS, TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
+import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
+import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
 import {
@@ -270,7 +271,10 @@ async function handleSync(data, chat, show, admin, role) {
   const endLabel = latest ? formatKhmerDate(dayOf(latest.endDate)) : '—';
   const name = group.name ?? String(chat.id);
 
-  if (data === 'RENEW') return show(...menu(renewMenu(name, endLabel, priceLabel)));
+  if (data === 'RENEW') {
+    const pay = await paymentSettings();
+    return show(...menu(renewMenu(name, endLabel, (m) => priceLabel(m, pay))));
+  }
 
   if (data === 'LIFETIME') {
     const lifetime = !group.lifetime;
@@ -284,14 +288,15 @@ async function handleSync(data, chat, show, admin, role) {
   if (data.startsWith('RENEW_')) {
     const months = Number(data.slice(6));
     if (!RENEW_MONTHS.includes(months)) return;
+    const pay = await paymentSettings();
     const sub = await renewSubscription(group.id, {
       months,
-      price: MONTHLY_PRICE_CENTS * months,
-      currency: MANUAL_CURRENCY,
+      price: pay.price * months,
+      currency: pay.currency,
       recordedBy: admin.id,
     });
     const until = formatKhmerDate(dayOf(sub.endDate));
-    await show(`✅ Recorded ${priceLabel(months)} for ${months} month(s).\n"${name}" is active until ${until}.`, {
+    await show(`✅ Recorded ${priceLabel(months, pay)} for ${months} month(s).\n"${name}" is active until ${until}.`, {
       reply_markup: { inline_keyboard: [[{ text: '🧾 History', callback_data: 'HISTORY' }, { text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'SYNC_MENU' }]] },
     });
     // Let the group know it can use the reports again.

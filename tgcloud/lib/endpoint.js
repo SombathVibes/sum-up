@@ -24,6 +24,13 @@ export async function requireAdmin(ctx) {
   return user;
 }
 
+/** Super admins only: team and payment settings. */
+export async function requireSuper(ctx) {
+  const user = caller(ctx);
+  if (!(await isSuper(user))) throw new EndpointError('Only super admins can do this.', { code: 'FORBIDDEN' });
+  return user;
+}
+
 /** The group (by Telegram id) and the caller's role in it; `need` is 'view' or 'manage'. */
 export async function requireGroup(ctx, groupTgId, need = 'view') {
   const user = caller(ctx);

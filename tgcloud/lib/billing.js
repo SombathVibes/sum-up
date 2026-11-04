@@ -4,12 +4,10 @@
 // (usually the group owner) pays for that group.
 
 import { api } from 'sdk';
-import {
-  BILLING_MODE, MANUAL_CURRENCY, MONTHLY_PRICE_CENTS, PAYMENT_ACCOUNT_NAME, PAYMENT_ACCOUNT_NUMBER, PAYMENT_BANK,
-  PAYMENT_INSTRUCTIONS, SUBSCRIPTION_STARS, SUPPORT_LINK,
-} from './config.js';
+import { BILLING_MODE, SUBSCRIPTION_STARS } from './config.js';
 import { dayOf, formatKhmerDate, now } from './dates.js';
 import { money } from './report.js';
+import { paymentSettings } from './settings.js';
 import { getGroup, getSetting, latestSubscription, recordStarsPayment, setBillingStatus, upsertGroup } from './store.js';
 
 const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -32,9 +30,10 @@ export const invoiceLink = (chat) => api.createInvoiceLink({
   subscription_period: PERIOD,
 });
 
-export const priceLabel = (months = 1) => BILLING_MODE === 'stars'
+/** pay: paymentSettings() */
+export const priceLabel = (months, pay) => BILLING_MODE === 'stars'
   ? `${SUBSCRIPTION_STARS * months} ⭐`
-  : `${MANUAL_CURRENCY === 'USD' ? '$' : ''}${money(MONTHLY_PRICE_CENTS * months)}${MANUAL_CURRENCY === 'USD' ? '' : ` ${MANUAL_CURRENCY}`}`;
+  : `${pay.currency === 'USD' ? '$' : '៛'}${money(pay.price * months)}`;
 
 /**
  * The subscription screen: status and end date, then how to pay — the QR
@@ -53,6 +52,7 @@ export async function subscriptionScreen(chat, group) {
   const latest = group && (await latestSubscription(group.id));
   const active = latest && latest.endDate >= now();
   const renewing = group?.billingStatus === 'active';
+  const pay = await paymentSettings();
 
   const lines = ['<b>⭐ ការជាវប្រចាំខែ</b>'];
   if (active) lines.push(`សុពលភាពដល់: ${formatKhmerDate(dayOf(latest.endDate))}${latest.isTrial ? ' (សាកល្បង)' : ''}`);
@@ -62,23 +62,23 @@ export async function subscriptionScreen(chat, group) {
   if (group?.billingStatus === 'failed') lines.push('❌ ការបង់ប្រាក់បន្តមិនបានសម្រេច');
   const rows = [];
   if (BILLING_MODE === 'stars') {
-    lines.push('', `តម្លៃ: ${priceLabel()} / ៣០ ថ្ងៃ / ក្រុម`);
+    lines.push('', `តម្លៃ: ${priceLabel(1, pay)} / ៣០ ថ្ងៃ / ក្រុម`);
     if (!renewing) rows.push([{ text: `⭐ ជាវ ${SUBSCRIPTION_STARS} Stars`, url: await invoiceLink(chat), style: 'success' }]);
-    rows.push([{ text: '📄 /terms', callback_data: 'TERMS' }, { text: '🆘 Support', url: SUPPORT_LINK }]);
+    rows.push([{ text: '📄 /terms', callback_data: 'TERMS' }, { text: '🆘 Support', url: pay.supportLink }]);
   } else {
     lines.push(
       '',
-      `តម្លៃ: <b>${esc(priceLabel())}</b> / ខែ / ក្រុម`,
+      `តម្លៃ: <b>${esc(priceLabel(1, pay))}</b> / ខែ / ក្រុម`,
       '',
-      `🏦 ${esc(PAYMENT_BANK)}`,
-      `👤 ${esc(PAYMENT_ACCOUNT_NAME)}`,
-      `💳 <code>${esc(PAYMENT_ACCOUNT_NUMBER)}</code>`,
+      `🏦 ${esc(pay.bank)}`,
+      `👤 ${esc(pay.accountName)}`,
+      `💳 <code>${esc(pay.accountNumber)}</code>`,
       '',
-      esc(PAYMENT_INSTRUCTIONS),
+      esc(pay.instructions),
     );
     rows.push([
-      { text: '📋 ចម្លងលេខគណនី', copy_text: { text: PAYMENT_ACCOUNT_NUMBER.replace(/\s/g, '') } },
-      { text: '💬 ផ្ញើវិក្កយបត្រ', url: SUPPORT_LINK, style: 'success' },
+      { text: '📋 ចម្លងលេខគណនី', copy_text: { text: pay.accountNumber.replace(/\s/g, '') } },
+      { text: '💬 ផ្ញើវិក្កយបត្រ', url: pay.supportLink, style: 'success' },
     ]);
     rows.push([{ text: '📄 /terms', callback_data: 'TERMS' }]);
   }

@@ -1,5 +1,6 @@
 // SumUp admin Mini App: Groups (search, expiry, 30-day chart), a group's report
-// (date range, banks, payments, CSV), and Billing (expiring groups, history, renew).
+// (date range, banks, payments, CSV), Billing (expiring groups, history, renew)
+// and, for super admins, Team (roles per group) and Settings (payment details).
 // Who may see what is decided by the endpoints (tgcloud/lib/endpoint.js).
 
 import { useCallback, useEffect, useState } from 'react';
@@ -7,6 +8,8 @@ import { call } from './api.js';
 import Billing from './screens/Billing.jsx';
 import Group from './screens/Group.jsx';
 import Groups from './screens/Groups.jsx';
+import Settings from './screens/Settings.jsx';
+import Team from './screens/Team.jsx';
 
 const tg = window.Telegram?.WebApp;
 
@@ -58,14 +61,21 @@ export default function App() {
         </div>
         <button className="icon" onClick={load} aria-label="Refresh">🔄</button>
       </header>
-      {tab === 'groups'
-        ? <Groups groups={groups} onOpen={(tgId) => setOpen({ tgId, view: 'report' })} />
-        : <Billing groups={groups} onOpen={(tgId) => setOpen({ tgId, view: 'billing' })} />}
+      {tab === 'groups' && <Groups groups={groups} onOpen={(tgId) => setOpen({ tgId, view: 'report' })} />}
+      {tab === 'billing' && <Billing groups={groups} onOpen={(tgId) => setOpen({ tgId, view: 'billing' })} />}
+      {tab === 'team' && me?.superAdmin && <Team me={me} />}
+      {tab === 'settings' && me?.superAdmin && <Settings />}
       <nav className="tabs">
         <button className={tab === 'groups' ? 'on' : ''} onClick={() => setTab('groups')}>🏪 ក្រុម</button>
         <button className={tab === 'billing' ? 'on' : ''} onClick={() => setTab('billing')}>
           ⭐ ការជាវ{(() => { const n = groups.filter((g) => !g.status || (g.status.kind !== 'lifetime' && g.status.daysLeft <= 10)).length; return n ? <span className="dot">{n}</span> : null; })()}
         </button>
+        {me?.superAdmin && (
+          <>
+            <button className={tab === 'team' ? 'on' : ''} onClick={() => setTab('team')}>👥 ក្រុមការងារ</button>
+            <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}>⚙️ ការកំណត់</button>
+          </>
+        )}
       </nav>
     </div>
   );

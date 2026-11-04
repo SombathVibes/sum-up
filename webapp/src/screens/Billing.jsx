@@ -40,6 +40,17 @@ export function BillingPanel({ group, onChanged }) {
   const [error, setError] = useState(null);
   const [done, setDone] = useState(null);
   const canRenew = group.role === 'manage' || group.role === 'super';
+  const [lifetime, setLifetime] = useState(group.lifetime);
+
+  const toggleLifetime = () => {
+    const on = !lifetime;
+    const go = () => call('lifetime', { groupId: group.tgId, on })
+      .then(() => { setLifetime(on); setDone(on ? '♾️ បានបើកសិទ្ធិអចិន្ត្រៃយ៍' : '✅ ត្រឡប់ទៅការជាវធម្មតា'); onChanged(); })
+      .catch((e) => setDone(`⚠️ ${e.message}`));
+    const text = on ? `ផ្តល់សិទ្ធិអចិន្ត្រៃយ៍ដល់ "${group.name}"? មិនផុតកំណត់ និងលាក់ប៊ូតុងជាវ។` : `ដកសិទ្ធិអចិន្ត្រៃយ៍ពី "${group.name}"?`;
+    if (tg?.showConfirm) tg.showConfirm(text, (ok) => ok && go());
+    else if (window.confirm(text)) go();
+  };
 
   const load = () => call('groupHistory', { groupId: group.tgId }).then((r) => setHistory(r.periods), setError);
   useEffect(() => { load(); }, [group.tgId]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -55,7 +66,13 @@ export function BillingPanel({ group, onChanged }) {
 
   return (
     <main className="content">
-      {group.status?.kind === 'lifetime'
+      {group.role === 'super' && (
+        <section className="card row">
+          <span>♾️ សិទ្ធិអចិន្ត្រៃយ៍</span>
+          <button className={`btn small${lifetime ? '' : ' off'}`} onClick={toggleLifetime}>{lifetime ? 'ON' : 'OFF'}</button>
+        </section>
+      )}
+      {lifetime
         ? <section className="card"><strong>♾️ អចិន្ត្រៃយ៍</strong><p className="muted">ក្រុមនេះមិនចាំបាច់បង់ប្រាក់ទេ។</p></section>
         : (
           <section className="card">

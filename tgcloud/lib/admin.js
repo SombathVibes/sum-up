@@ -181,8 +181,28 @@ export async function teamMemberScreen(userId, page = 0) {
   return { text: lines.join('\n'), parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } };
 }
 
+/**
+ * Sets an admin's role in a group (null removes it) and keeps the group's
+ * command list in step: managers see /sync there. Shared with the Mini App.
+ */
+export async function assignRole(userId, group, role) {
+  const before = (await rolesOf(userId)).get(group.id) ?? null;
+  await setGroupRole(userId, group.id, role);
+  if (role === 'manage') await setCommands(group.tgId, await managersOf(group.id));
+  if (before === 'manage' && role !== 'manage') await clearCommands(group.tgId, userId);
+}
+
+/** Removes an admin (never a config super admin) and their /sync commands. */
+export async function deleteAdmin(userId) {
+  if (isConfigSuper(userId)) return false;
+  const roles = await rolesOf(userId);
+  for (const g of await listGroups()) if (roles.get(g.id) === 'manage') await clearCommands(g.tgId, userId);
+  await removeAdmin(userId);
+  return true;
+}
+
 /** The 'add admin' prompt: Telegram's own user picker, as a one-time reply keyboard. */
-const addPrompt = (chatId) => api.sendMessage({
+export const addPrompt = (chatId) => api.sendMessage({
   chat_id: chatId,
   text: '👤 ចុចប៊ូតុងខាងក្រោម ហើយជ្រើសរើសអ្នកប្រើ ដើម្បីបន្ថែមជាអ្នកគ្រប់គ្រង។',
   reply_markup: {
@@ -218,13 +238,9 @@ export async function handleTeam(data, chatId, show) {
   if (m) {
     const [userId, groupId, page] = [Number(m[1]), Number(m[2]), Number(m[3] ?? 0)];
     if (!(await getAdmin(userId))) return showScreen(await teamScreen());
-    const before = (await rolesOf(userId)).get(groupId) ?? 'none';
-    const after = NEXT_ROLE[before];
-    await setGroupRole(userId, groupId, after === 'none' ? null : after);
-    // Managers see /sync in that group's command list.
     const group = (await listGroups()).find((g) => g.id === groupId);
-    if (group && after === 'manage') await setCommands(group.tgId, await managersOf(groupId));
-    if (group && before === 'manage') await clearCommands(group.tgId, userId);
+    const after = NEXT_ROLE[(await rolesOf(userId)).get(groupId) ?? 'none'];
+    if (group) await assignRole(userId, group, after === 'none' ? null : after);
     return showScreen(await teamMemberScreen(userId, page));
   }
 
@@ -248,11 +264,7 @@ export async function handleTeam(data, chatId, show) {
 
   m = /^TEAMDEL!_(\d+)$/.exec(data);
   if (m) {
-    const userId = Number(m[1]);
-    if (isConfigSuper(userId)) return showScreen(await teamScreen());
-    const roles = await rolesOf(userId);
-    for (const g of await listGroups()) if (roles.get(g.id) === 'manage') await clearCommands(g.tgId, userId);
-    await removeAdmin(userId);
+    await deleteAdmin(Number(m[1]));
     return showScreen(await teamScreen());
   }
 }

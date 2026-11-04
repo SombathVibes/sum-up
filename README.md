@@ -45,10 +45,12 @@ A web app inside Telegram for admins (`webapp/`, Vite + React), hosted by Telegr
 
 - **Groups:** search, filter (all / ending soon / expired), sort by name, days left or 30-day total, and a 30-day chart for each group.
 - **A group:** any date range (quick buttons or a date picker), KHR / USD / payment totals with the change versus the period before, a daily chart, a per-bank table, and the payments list with search and paging. **📤 CSV ទៅ chat** sends the range as a CSV file to the admin's private chat with the bot.
-- **Billing:** expired and ending-soon groups first, each group's history, and Renew (1/3/6/12 months) for managers.
+- **Billing:** expired and ending-soon groups first, each group's history, and Renew (1/3/6/12 months) for managers. Super admins also switch a group's lifetime access here.
+- **Team** (super admins): every admin with their groups; set 👁 view / 🛠 manage / none per group, turn super admin on or off, or remove an admin. **➕** opens the bot's chat at `?start=addadmin`, where Telegram's user picker adds the new admin. Config super admins (`ADMIN_IDS`) can't be changed here, and you can't demote or remove yourself.
+- **Settings** (super admins): the monthly price and currency, bank, account name and number, payment instructions and the support link. They're saved in the `settings` table (key `payment`, only the fields that differ from `config.js`), and ⭐ ការជាវ, Renew and `/paysupport` use them right away. The QR photo is still set with `/setqr`.
 - **Login:** none to build. Telegram signs the user into the init data, the platform verifies it before an endpoint runs, and each endpoint checks the role (`tgcloud/lib/endpoint.js`): viewers see their groups, managers can renew. Outside Telegram the endpoints refuse every call.
 - **Opening it:** set `MINIAPP_URL` in `tgcloud/lib/config.js` to the address `npm run deploy` prints (`https://app<app_id>.tgcloud.ai/`), and the private admin panel gets a **🖥 Admin app** button.
-- **Endpoints** (`tgcloud/endpoints/`): `me`, `groups`, `groupReport`, `groupPayments`, `sendCsv`, `groupHistory`, `renew`. The page calls them with `Telegram.WebApp.Serverless.call` when it's hosted on `tgcloud.ai`, and with `fetch('/api/<name>')` otherwise (local testing).
+- **Endpoints** (`tgcloud/endpoints/`): `me`, `groups`, `groupReport`, `groupPayments`, `sendCsv`, `groupHistory`, `renew`, `lifetime`, `team`, `teamRole`, `teamSuper`, `teamRemove`, `settings`, `settingsSave`. The page calls them with `Telegram.WebApp.Serverless.call` when it's hosted on `tgcloud.ai`, and with `fetch('/api/<name>')` otherwise (local testing).
 
 ## Roles
 

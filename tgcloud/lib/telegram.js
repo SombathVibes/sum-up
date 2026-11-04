@@ -1,11 +1,12 @@
 // Small Bot API helpers shared by the handlers.
 
 import { api, BotApiError } from 'sdk';
-import { ADMIN_IDS, SUPPORT_LINK } from './config.js';
+import { ADMIN_IDS } from './config.js';
+import { paymentSettings } from './settings.js';
 import { latestTgMessageId } from './store.js';
 
 let me;
-const getMe = async () => (me ??= await api.getMe());
+export const getMe = async () => (me ??= await api.getMe());
 
 
 /**
@@ -41,10 +42,10 @@ export const sendScreen = (chatId, { photo, text, ...extra }) => (photo
   ? api.sendPhoto({ chat_id: chatId, photo, caption: text, ...extra })
   : api.sendMessage({ chat_id: chatId, text, ...extra }));
 
-export const sendSupport = (chatId) =>
+export const sendSupport = async (chatId) =>
   api.sendMessage({
     chat_id: chatId,
-    text: `សម្រាប់បញ្ហាការបង់ប្រាក់ សូមទាក់ទងយើងខ្ញុំតាមរយៈ Telegram៖ ${SUPPORT_LINK}\n(Telegram support មិនអាចជួយការទិញក្នុង bot នេះបានទេ)`,
+    text: `សម្រាប់បញ្ហាការបង់ប្រាក់ សូមទាក់ទងយើងខ្ញុំតាមរយៈ Telegram៖ ${(await paymentSettings()).supportLink}\n(Telegram support មិនអាចជួយការទិញក្នុង bot នេះបានទេ)`,
   });
 
 const MENU_COMMAND = { command: 'menu', description: 'របាយការណ៍ប្រតិបត្តិការ' };
