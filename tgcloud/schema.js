@@ -92,30 +92,43 @@ export const adminGroups = table('admin_groups', {
   byGroup: index('idx_admin_groups_group').on(t.groupId),
 }));
 
-// Daily report (off by default; super admins switch it on per group): at
-// `time` (Phnom Penh, 'HH:MM') the bot calls `url` and saves what it returns.
+// Daily report (off by default; super admins switch it on per group): at each
+// of `times` (Phnom Penh, 'HH:MM,HH:MM', sorted) the bot calls `url` and saves
+// what it returns.
 // In the URL, {date} becomes the day ('YYYY-MM-DD') and {group} the group's
 // Telegram id. groupId is groups.id.
 export const dailyConfigs = table('daily_configs', {
   groupId:     integer('group_id').primaryKey(),
   enabled:     boolean('enabled').notNull().default(false),
   url:         text('url').notNull().default(''),
-  time:        text('time').notNull().default('21:00'),
+  times:       text('times').notNull().default('21:00'),
   postToGroup: boolean('post_to_group').notNull().default(true),
+  // Sign-in for APIs that need it. 'login': POST { username, password } as
+  // JSON to login_url, take the token from the reply (token_field, a dotted
+  // path, or a usual name like token / access_token / data.token) and call
+  // url with 'Authorization: Bearer <token>'. The password never leaves the
+  // bot: the Mini App only learns whether one is saved.
+  authType:    text('auth_type').notNull().default('none'), // 'none' | 'login'
+  loginUrl:    text('login_url').notNull().default(''),
+  username:    text('username').notNull().default(''),
+  password:    text('password').notNull().default(''),
+  tokenField:  text('token_field').notNull().default(''),
   updatedAt:   integer('updated_at').notNull().default(sql`(unixepoch())`),
 });
 
-// One fetched report per group and day (a re-run replaces it). body is the
+// One fetched report per group, day and slot (the scheduled 'HH:MM' it ran
+// for; a manual run uses the minute it ran). A re-run replaces it. body is the
 // response text, cut at 100 KB.
 export const dailyReports = table('daily_reports', {
   id:         integer('id').primaryKey({ autoIncrement: true }),
   groupId:    integer('group_id').notNull(),
   day:        text('day').notNull(), // 'YYYY-MM-DD', Phnom Penh
+  slot:       text('slot').notNull().default(''), // 'HH:MM', Phnom Penh
   ranAt:      integer('ran_at').notNull(),
   ok:         boolean('ok').notNull().default(false),
   httpStatus: integer('http_status').notNull().default(0),
   body:       text('body').notNull().default(''),
   error:      text('error'),
 }, (t) => ({
-  uniq: uniqueIndex('uq_daily_reports_day').on(t.groupId, t.day),
+  uniq: uniqueIndex('daily_reports_slot_uniq').on(t.groupId, t.day, t.slot),
 }));

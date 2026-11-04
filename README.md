@@ -56,13 +56,14 @@ A web app inside Telegram for admins (`webapp/`, Vite + React), hosted by Telegr
 
 A super admin switches it on per group in the Mini App (group → **📥 Daily**) and sets:
 
-- **URL:** what the bot calls each day. `{date}` becomes the day (`YYYY-MM-DD`, Phnom Penh) and `{group}` the group's Telegram id, e.g. `https://example.com/report?date={date}&shop={group}`. Put any API key in the URL; there are no custom headers yet.
-- **Time:** when to call it, Phnom Penh time.
+- **URL:** what the bot calls each day. `{date}` becomes the day (`YYYY-MM-DD`, Phnom Penh) and `{group}` the group's Telegram id, e.g. `https://example.com/report?date={date}&shop={group}`. An API key can go in the URL; for a username and password, use Login below.
+- **Times:** one or more times a day to call it (up to 24), Phnom Penh time. Add them one by one, or use **⚡ shortcuts**: every 1, 2, 3, 4, 6 or 12 hours, on the hour, between a start and end hour (for example every hour from 08:00 to 20:00).
 - **Post to group:** send the result to the group (on by default). Either way it's saved.
+- **🔐 Login** (optional): for APIs that need a sign-in. Before each call the bot POSTs `{ "username", "password" }` as JSON to the login URL, takes the token from the reply (a usual field such as `token`, `access_token` or `data.accessToken`, or the one set under *Advanced*), and calls the report URL with `Authorization: Bearer <token>`. The password is stored in the bot's database and never sent back to the Mini App, which only shows that one is saved; leave it blank to keep it, and turning Login off deletes it.
 
-The response is saved in `daily_reports` (one row per group and day; a re-run replaces it, body cut at 100 KB). JSON objects are shown as `key: value` lines, anything else as text. When it's on, the group's `/menu` gets a **📥 Daily report** button that shows the latest one. **🧪** in the Mini App tests the URL without posting, and the recent reports are listed there.
+The response is saved in `daily_reports`, one row per group, day and time (a re-run of the same time replaces it; a manual run is saved under the minute it ran; body cut at 100 KB). JSON objects are shown as `key: value` lines, anything else as text. When it's on, the group's `/menu` gets a **📥 Daily report** button that shows the latest one. **🧪** in the Mini App tests the URL without posting, and the recent reports are listed there.
 
-**The clock:** Telegram Serverless has no timer, so the sync helper is the clock. When a config changes, the bot sends the helper its times (`POST /schedule`, kept in the helper's KV). The helper's cron runs every minute and, at each of those times, sends `/dailyrun` to the bot as its user account (a super admin). The bot deletes that message and runs every enabled group whose time has passed and that has no report yet today, so a missed minute catches up at the next one. Failures are reported in that private chat. Locally, `npm run dev` runs the same check every minute itself (`DEV_DAILY=0` turns it off).
+**The clock:** Telegram Serverless has no timer, so the sync helper is the clock. When a config changes, the bot sends the helper its times (`POST /schedule`, kept in the helper's KV). The helper's cron runs every minute and, at each of those times, sends `/dailyrun` to the bot as its user account (a super admin). The bot deletes that message and, for every enabled group, runs its latest time that has passed today if that time has no report yet. So a missed minute catches up at the next trigger, while earlier missed times are skipped rather than run in a burst. Failures are reported in that private chat. Locally, `npm run dev` runs the same check every minute itself (`DEV_DAILY=0` turns it off).
 
 ## Roles
 
