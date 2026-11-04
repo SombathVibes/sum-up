@@ -175,7 +175,7 @@ export const setSetting = (key, value) => db.insert(settings)
   .run();
 
 /** The latest payments in a range, newest first: [{ date, amount, currency, botTgId }]. */
-export const recentPayments = (groupId, range, limit = 10) => db.select().from(messages)
+export const recentPayments = (groupId, range, limit = 100) => db.select().from(messages)
   .where(and(eq(messages.groupId, groupId), gte(messages.date, range.start), lte(messages.date, range.end)))
   .orderBy(desc(messages.date))
   .limit(limit)

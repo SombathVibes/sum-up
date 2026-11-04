@@ -76,9 +76,9 @@ assert.ok(ui.viewKey('CMONTH_2026-11', { daily: true, bank: 6336847041 }).length
     prev: [{ botTgId: ABA, currency: 'KHR', total: 20000000, ops: 10, first: 0, last: 0 }],
   }, { username: 'sombath' });
   assert.ok(text.includes('📊 សប្ដាហ៍ 02/11 – 08/11/2026'));
-  assert.ok(text.includes('Mon 02     8     92,400     12.5'));
-  assert.ok(text.includes('Wed 04     ·          ·        ·'));
-  assert.ok(text.includes('Total     22    232,100     12.5'));
+  assert.ok(text.includes('Mon 02         8         92,400        12.5'));
+  assert.ok(text.includes('Wed 04         ·              ·           ·'));
+  assert.ok(text.includes('Total         22        232,100        12.5'));
   assert.ok(text.includes('🏦 ABA 18 · ៛200,000'));
   assert.ok(text.includes('🏦 WING 4 · ៛32,100 · $12.5'));
   assert.ok(text.includes('📈 ថ្ងៃច្រើនបំផុត: Tue 03/11 · 14 ប្រតិ. · ៛139,700'));

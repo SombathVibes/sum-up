@@ -85,7 +85,11 @@ export function dayReport(day, rows, user, recent = [], compare = {}) {
   }
   if (recent.length) {
     const lines = recent.map((p) => `${formatTime(p.date)}  ${SYMBOL[p.currency]}${money(p.amount)}  ${escapeHtml(botName(p.botTgId))}`);
-    out.push(`<blockquote expandable>🧾 ប្រតិបត្តិការចុងក្រោយ\n${lines.join('\n')}</blockquote>`);
+    // The store caps the list (100); say so when the day has more.
+    const title = recent.length < total.ops
+      ? `🧾 ប្រតិបត្តិការចុងក្រោយ ${recent.length}/${total.ops}`
+      : `🧾 ប្រតិបត្តិការទាំងអស់ (${total.ops})`;
+    out.push(`<blockquote expandable>${title}\n${lines.join('\n')}</blockquote>`);
   }
   out.push(...dayComparison(total, weekday, compare));
   out.push(`<i>🕔 ${formatTime(now())} · ${byName(user)}</i>`);
@@ -99,13 +103,16 @@ export function dayReport(day, rows, user, recent = [], compare = {}) {
 export function dayTable(day, rows, user, compare = {}) {
   const weekday = WEEKDAYS[new Date(Date.UTC(day.y, day.m - 1, day.d)).getUTCDay()];
   const { bots, total } = summarize(rows);
-  const row = (name, ops, khr, usd) =>
-    `${String(name).padEnd(7)}${String(ops).padStart(4)}${String(khr).padStart(11)}${String(usd).padStart(9)}`;
+  // No dollar payments that day: leave the USD column out.
+  const usd = total.USD !== 0;
+  const row = (name, ops, khr, usdCell) =>
+    `${String(name).padEnd(10)}${String(ops).padStart(6)}${String(khr).padStart(15)}${usd ? String(usdCell).padStart(12) : ''}`;
+  const rule = '─'.repeat(usd ? 43 : 31);
   const lines = [
     row('Bank', 'Ops', 'KHR', 'USD'),
-    '─'.repeat(31),
-    ...bots.map((b) => row(b.name.slice(0, 7), b.ops, money(b.KHR), money(b.USD))),
-    '─'.repeat(31),
+    rule,
+    ...bots.map((b) => row(b.name.slice(0, 10), b.ops, money(b.KHR), money(b.USD))),
+    rule,
     row('Total', total.ops, money(total.KHR), money(total.USD)),
   ];
   return [
@@ -171,12 +178,16 @@ export function rangeReport(range, data, user, { month = false, daily = false, b
   }
 
   const sum = days.reduce((t, e) => ({ ops: t.ops + e.ops, KHR: t.KHR + e.KHR, USD: t.USD + e.USD }), { ops: 0, KHR: 0, USD: 0 });
-  const line = (label, ops, khr, usd) => `${String(label).padEnd(8)}${String(ops).padStart(4)}${String(khr).padStart(11)}${String(usd).padStart(9)}`;
+  // No dollar payments in the range: leave the USD column out.
+  const usd = sum.USD !== 0;
+  const line = (label, ops, khr, usdCell) =>
+    `${String(label).padEnd(10)}${String(ops).padStart(6)}${String(khr).padStart(15)}${usd ? String(usdCell).padStart(12) : ''}`;
+  const rule = '─'.repeat(usd ? 43 : 31);
   const table = [
     line(month && !daily ? 'Week' : 'Day', 'Ops', 'KHR', 'USD'),
-    '─'.repeat(32),
+    rule,
     ...rows.map((r) => line(r.label, dotIfZero(r.ops), dotIfZero(r.KHR, money), dotIfZero(r.USD, money))),
-    '─'.repeat(32),
+    rule,
     line('Total', sum.ops, money(sum.KHR), money(sum.USD)),
   ];
 
