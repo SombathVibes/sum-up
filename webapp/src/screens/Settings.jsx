@@ -1,8 +1,9 @@
 // Payment settings (super admins): the monthly price and the account details
-// customers see on ⭐ ការជាវ. Defaults come from config.js; the QR photo is
-// still set in chat with /setqr.
+// customers see on ⭐ ការជាវ (defaults come from config.js), and the two files
+// the bot uses: the payment QR and the agent Excel template (also settable in
+// chat with /setqr and /settemplate).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { call } from '../api.js';
 import { money } from '../format.js';
 
@@ -13,6 +14,50 @@ const FIELDS = [
   ['supportLink', '💬 Link ផ្ញើវិក្កយបត្រ (https://t.me/…)', 200],
 ];
 const LABEL = { price: 'តម្លៃ', currency: 'រូបិយប័ណ្ណ', instructions: 'សេចក្តីណែនាំ', bank: 'ធនាគារ', accountName: 'ឈ្មោះគណនី', accountNumber: 'លេខគណនី', supportLink: 'Link' };
+
+const MAX_UPLOAD = 5 * 1024 * 1024;
+
+/** A File's bytes as base64 (for the uploadFile endpoint). */
+const toBase64 = (file) => new Promise((resolve, reject) => {
+  const reader = new FileReader();
+  reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+  reader.onerror = () => reject(reader.error);
+  reader.readAsDataURL(file);
+});
+
+/** One file setting: its state and an upload button (picks a file, sends it at once). */
+function Upload({ icon, title, accept, kind, current, onDone }) {
+  const input = useRef(null);
+  const [state, setState] = useState(null); // null | 'busy' | { ok } | { error }
+  const pick = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > MAX_UPLOAD) { setState({ error: 'ឯកសារត្រូវតែតូចជាង 5 MB' }); return; }
+    setState('busy');
+    try {
+      const r = await call('uploadFile', { kind, name: file.name, data: await toBase64(file) });
+      setState({ ok: `✅ បានរក្សាទុក ${r.name}` });
+      onDone(r);
+    } catch (err) {
+      setState({ error: err.message });
+    }
+  };
+  return (
+    <div className="row upload">
+      <div className="grow">
+        <div className="small">{icon} {title}</div>
+        <div className={`small ${current ? 'ok' : 'muted'}`}>{current ? `បានរក្សាទុក ✓ ${current === true ? '' : current}` : 'មិនទាន់មាន'}</div>
+        {state?.ok && <div className="small">{state.ok}</div>}
+        {state?.error && <div className="small error">⚠️ {state.error}</div>}
+      </div>
+      <input ref={input} type="file" accept={accept} hidden onChange={pick} />
+      <button className="btn small" disabled={state === 'busy'} onClick={() => input.current?.click()}>
+        {state === 'busy' ? 'កំពុងផ្ញើ…' : current ? '🔄 ប្តូរ' : '📤 ផ្ញើ'}
+      </button>
+    </div>
+  );
+}
 
 /** Hundredths ↔ the text in the price box ('5', '12.5'). */
 const priceText = (cents) => money(cents).replace(/,/g, '');
@@ -72,7 +117,14 @@ export default function Settings() {
           <span className="muted small">📝 សេចក្តីណែនាំ</span>
           <textarea className="field" rows={3} value={form.instructions} maxLength={500} onChange={set('instructions')} />
         </label>
-        <p className="muted small">🖼 QR: {data.hasQr ? 'មានរួចហើយ' : 'មិនទាន់មាន'} — ផ្ញើរូប QR ជាមួយ caption /setqr ក្នុង chat ជាមួយ bot ដើម្បីប្តូរ។</p>
+      </section>
+
+      <section className="card">
+        <strong>📎 ឯកសារ</strong>
+        <Upload icon="🖼" title="QR បង់ប្រាក់ (PNG / JPG)" accept="image/png,image/jpeg" kind="qr" current={data.hasQr}
+          onDone={() => setData({ ...data, hasQr: true })} />
+        <Upload icon="📊" title="Template Excel ភ្នាក់ងារ (.xlsx)" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" kind="template" current={data.template}
+          onDone={(r) => setData({ ...data, template: r.name })} />
       </section>
 
       {error && <p className="error">{error.message}</p>}

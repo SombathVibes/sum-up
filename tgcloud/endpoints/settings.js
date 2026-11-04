@@ -1,6 +1,8 @@
 // Payment settings for the Mini App (super admins): the current values, the
-// config.js defaults, and whether a payment QR is set (/setqr in chat).
+// config.js defaults, and whether the payment QR and the agent Excel
+// template are set (uploadFile, or /setqr and /settemplate in chat).
 
+import { TEMPLATE_KEY, TEMPLATE_NAME_KEY } from '../lib/agents.js';
 import { BILLING_MODE } from '../lib/config.js';
 import { requireSuper } from '../lib/endpoint.js';
 import { paymentDefaults, paymentSettings } from '../lib/settings.js';
@@ -13,5 +15,6 @@ export default async function (input, ctx) {
     defaults: paymentDefaults(),
     billingMode: BILLING_MODE,
     hasQr: !!(await getSetting('payment_qr')),
+    template: (await getSetting(TEMPLATE_KEY)) ? (await getSetting(TEMPLATE_NAME_KEY)) ?? 'template.xlsx' : null,
   };
 }

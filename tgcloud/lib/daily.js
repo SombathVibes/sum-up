@@ -18,7 +18,7 @@ import { listGroups } from './store.js';
 
 const OFFSET = 7 * 3600; // Phnom Penh, UTC+7
 const MAX_BODY = 300_000; // other APIs' replies; cut JSON can't be laid out
-const KEEP_DAYS = 90;
+const KEEP_DAYS = 7; // older days are fetched again when picked
 const TIMEOUT_MS = 20_000;
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MAX_TIMES = 24;
@@ -44,6 +44,7 @@ function toConfig(row, secret) {
   const cfg = {
     enabled: !!r.enabled,
     url: r.url,
+    url2: r.url2 ?? '',
     times: parseTimes(r.times),
     postToGroup: !!r.postToGroup,
     authType: r.authType === 'login' ? 'login' : 'none',
@@ -73,9 +74,11 @@ export function checkDaily(input) {
   const list = Array.isArray(input.times) ? input.times.map(String) : [];
   if (url && (!/^https?:\/\/\S+$/.test(url) || url.length > 1000)) return { error: 'url' };
   if (enabled && !url) return { error: 'url' };
+  const url2 = String(input.url2 ?? '').trim();
+  if (url2 && (!/^https?:\/\/\S+$/.test(url2) || url2.length > 1000)) return { error: 'url2' };
   if (!list.length || list.length > MAX_TIMES || !list.every((t) => TIME.test(t))) return { error: 'times' };
   const times = [...new Set(list)].sort();
-  const values = { enabled, url, times, postToGroup: input.postToGroup !== false, authType: 'none', loginUrl: '', username: '', tokenField: '' };
+  const values = { enabled, url, url2, times, postToGroup: input.postToGroup !== false, authType: 'none', loginUrl: '', username: '', tokenField: '' };
   if (input.authType === 'login') {
     const loginUrl = String(input.loginUrl ?? '').trim();
     const username = String(input.username ?? '').trim();
@@ -145,11 +148,11 @@ export async function pushSchedule() {
 }
 
 export const reportHistory = (groupId, limit = 30) => db.select().from(reportSnapshots)
-  .where(eq(reportSnapshots.groupId, groupId)).orderBy(desc(reportSnapshots.ranAt)).limit(limit).all();
+  .where(eq(reportSnapshots.groupId, groupId)).orderBy(desc(reportSnapshots.day)).limit(limit).all();
 
-/** The latest saved report for one day ('YYYY-MM-DD'), or undefined. */
+/** One day's saved report ('YYYY-MM-DD'), or undefined. */
 export const reportForDay = (groupId, day) => db.select().from(reportSnapshots)
-  .where(and(eq(reportSnapshots.groupId, groupId), eq(reportSnapshots.day, day))).orderBy(desc(reportSnapshots.ranAt)).limit(1).get();
+  .where(and(eq(reportSnapshots.groupId, groupId), eq(reportSnapshots.day, day))).get();
 
 /** Days ('YYYY-MM-DD') in [from, to] that have a successful saved report. */
 export async function reportDays(groupId, from, to) {
@@ -158,9 +161,6 @@ export async function reportDays(groupId, from, to) {
     .all();
   return new Set(rows.map((r) => r.day));
 }
-
-const slotReport = (groupId, day, slot) => db.select().from(reportSnapshots)
-  .where(and(eq(reportSnapshots.groupId, groupId), eq(reportSnapshots.day, day), eq(reportSnapshots.slot, slot))).get();
 
 /** The URL with {date} and {group} filled in. */
 export const buildUrl = (url, day, group) => url
@@ -228,54 +228,96 @@ async function signIn(cfg, signal) {
 }
 
 /**
+ * GET requests signed in the way the group's source says: extra headers, and
+ * for 'login' the saved token, logging in when there is none or it has
+ * expired, and once more when a call with the saved token answers 401. Calls
+ * may run in parallel; they share one login. Returns request(url) → Response,
+ * with request.token() → the current token (logging in if needed).
+ */
+export function openSession(group, cfg, signal) {
+  let token = cfg.authType === 'login' && cfg.token && !tokenExpired(cfg.token) ? cfg.token : null;
+  let pending = null;
+  const fresh = () => (pending ??= (async () => {
+    token = await signIn(cfg, signal);
+    await db.update(reportSources).set({ token }).where(eq(reportSources.groupId, group.id)).run();
+  })().finally(() => { pending = null; }));
+  const request = async (url) => {
+    if (cfg.authType === 'login' && !token) await fresh();
+    const used = token;
+    const call = () => fetch(url, {
+      headers: { ...extraHeaders(cfg), Accept: 'application/json, text/plain', ...(token && { Authorization: `Bearer ${token}` }) },
+      signal,
+    });
+    let res = await call();
+    if (res.status === 401 && cfg.authType === 'login') {
+      if (token === used) await fresh(); // else another call already logged in again
+      res = await call();
+    }
+    return res;
+  };
+  request.token = async () => {
+    if (cfg.authType === 'login' && !token) await fresh();
+    return token;
+  };
+  return request;
+}
+
+/**
  * Calls the group's URL now (signing in first if set), saves the result as today's report for `slot`
  * ('HH:MM'; default: this minute), replacing an earlier one for that slot, and,
  * if set, posts it in the group. Returns the saved row.
  */
 export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today())) {
-  const row = { groupId: group.id, day, slot, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null };
+  const row = { groupId: group.id, day, slot, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null, body2: '', error2: null };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const url = buildUrl(cfg.url, day, group);
-    const call = (token) => fetch(url, {
-      headers: { ...extraHeaders(cfg), Accept: 'application/json, text/plain', ...(token && { Authorization: `Bearer ${token}` }) },
-      signal: controller.signal,
-    });
-    let res;
-    if (cfg.authType !== 'login') {
-      res = await call(null);
-    } else {
-      // Reuse the saved token; log in when there's none or it has expired,
-      // and once more if the report call says 401 with a saved one.
-      const fresh = async () => {
-        const token = await signIn(cfg, controller.signal);
-        await db.update(reportSources).set({ token }).where(eq(reportSources.groupId, group.id)).run();
-        return token;
-      };
-      const saved = cfg.token && !tokenExpired(cfg.token) ? cfg.token : null;
-      res = await call(saved ?? (await fresh()));
-      if (res.status === 401 && saved) res = await call(await fresh());
-    }
-    row.httpStatus = res.status;
+  const failure = (e) => (e?.name === 'AbortError' ? `No answer in ${TIMEOUT_MS / 1000}s` : String(e?.message ?? e).slice(0, 300));
+
+  const request = openSession(group, cfg, controller.signal);
+  const get = async (rawUrl) => {
+    const res = await request(buildUrl(rawUrl, day, group));
     const text = await res.text();
-    row.ok = res.ok;
-    row.body = (row.ok && compactLottery(text)) || text.slice(0, MAX_BODY);
-    if (!res.ok) row.error = `HTTP ${res.status}${replyReason(row.body)}`;
+    const body = (res.ok && compactLottery(text)) || text.slice(0, MAX_BODY);
+    return { res, body, error: res.ok ? null : `HTTP ${res.status}${replyReason(body)}` };
+  };
+
+  try {
+    const first = await get(cfg.url);
+    Object.assign(row, { httpStatus: first.res.status, ok: first.res.ok, body: first.body, error: first.error });
+    if (row.ok && cfg.url2) {
+      try {
+        const second = await get(cfg.url2);
+        Object.assign(row, { body2: second.body, error2: second.error });
+      } catch (e) {
+        row.error2 = failure(e);
+      }
+    }
   } catch (e) {
-    row.error = e?.name === 'AbortError' ? `No answer in ${TIMEOUT_MS / 1000}s` : String(e?.message ?? e).slice(0, 300);
+    row.error = failure(e);
   } finally {
     clearTimeout(timer);
   }
-  const { groupId: _g, day: _d, slot: _s, ...set } = row;
-  await db.insert(reportSnapshots).values(row)
-    .onConflictDoUpdate({ target: [reportSnapshots.groupId, reportSnapshots.day, reportSnapshots.slot], set })
-    .run();
+  // One row per day: replace it, but a failed run keeps the last good report
+  // (only noting the time it ran for, so that time isn't retried every minute).
+  const saved = !row.ok && (await reportForDay(group.id, day));
+  if (saved?.ok) {
+    await db.update(reportSnapshots).set({ slot }).where(and(eq(reportSnapshots.groupId, group.id), eq(reportSnapshots.day, day))).run();
+  } else {
+    const { groupId: _g, day: _d, ...set } = row;
+    await db.insert(reportSnapshots).values(row)
+      .onConflictDoUpdate({ target: [reportSnapshots.groupId, reportSnapshots.day], set })
+      .run();
+  }
   if (row.ok && cfg.postToGroup) {
-    await api.sendMessage({ chat_id: group.tgId, text: formatReport(group, row), parse_mode: 'HTML' }).catch((e) => console.error('daily post failed', e));
+    const prev = await reportForDay(group.id, dayKey(addDays(parseDayKey(day), -1)));
+    await api.sendMessage({ chat_id: group.tgId, text: formatReport(group, row, prev), parse_mode: 'HTML' }).catch((e) => console.error('daily post failed', e));
   }
   return row;
 }
+
+/** Snapshots are kept KEEP_DAYS days. */
+export const pruneSnapshots = () => db.delete(reportSnapshots)
+  .where(lt(reportSnapshots.day, dayKey(addDays(today(), -KEEP_DAYS)))).run();
 
 /**
  * /dailyrun: for every enabled group, its latest time that has passed today,
@@ -285,12 +327,12 @@ export async function runDue() {
   const day = dayKey(today());
   const hhmm = nowHHMM();
   const done = [];
-  // Snapshots are kept KEEP_DAYS days.
-  await db.delete(reportSnapshots).where(lt(reportSnapshots.day, dayKey(addDays(today(), -KEEP_DAYS)))).run();
+  await pruneSnapshots();
   for (const cfg of await enabledConfigs()) {
     const slot = parseTimes(cfg.times).filter((t) => t <= hhmm).at(-1);
     if (!slot || !cfg.url) continue;
-    if (await slotReport(cfg.groupId, day, slot)) continue;
+    // Already ran for this time (or later, e.g. a manual run) today.
+    if (((await reportForDay(cfg.groupId, day))?.slot ?? '') >= slot) continue;
     const group = (await listGroups()).find((g) => g.id === cfg.groupId);
     if (!group) continue;
     done.push({ group, row: await runDaily(group, toConfig(cfg, true), slot) });
@@ -354,21 +396,57 @@ export function compactLottery(text) {
   });
 }
 
-/**
- * The lottery daily report (data.items[].upperLineSale with a summary and one
- * item per draw): per lottery a table of draws by time with bet, reward and
- * win/lose in riel, its total and the user/company split, then a grand total.
- * Returns HTML, or null when the reply isn't that shape.
- */
-function formatLottery(data) {
+/** The lottery report's lotteries with draws (upperLineSale), or null when the reply isn't that shape. */
+function lotteriesOf(data) {
   const body = data?.data;
   if (!body || !Array.isArray(body.items) || !('upperSummary' in body || 'underSummary' in body)) return null;
-  const lotteries = body.items
+  return body.items
     .map((it) => it?.upperLineSale)
     .filter((u) => u && u.summary && Array.isArray(u.items) && u.items.length);
+}
+
+/** Day totals in riel (and USD win/lose) over the lotteries. */
+function lotteryTotals(lotteries) {
+  const total = { bet: 0, reward: 0, wl: 0, user: 0, company: 0, usd: 0 };
+  for (const { summary: s } of lotteries) {
+    total.bet += Number(s.commissionKhr) || 0;
+    total.reward += Number(s.rewardAmountKhr) || 0;
+    total.wl += Number(s.winLoseAmountKhr) || 0;
+    total.user += Number(s.winLoseAmountKhrUser) || 0;
+    total.company += Number(s.winLoseAmountKhrCompany) || 0;
+    total.usd += Number(s.winLoseAmountUsd) || 0;
+  }
+  return total;
+}
+
+/** A saved snapshot's win/lose total, for the day-before comparison; null if it has none. */
+function snapshotWinLose(row) {
+  if (!row?.ok) return null;
+  try {
+    const lotteries = lotteriesOf(JSON.parse(row.body));
+    return lotteries?.length ? lotteryTotals(lotteries).wl : null;
+  } catch {
+    return null;
+  }
+}
+
+/** '📈 ចំណេញ ៛158,500' (positive win/lose is the house's gain) or '📉 ខាត ៛6,600'. */
+const profit = (wl) => (wl < 0 ? `📉 ខាត ៛${riel(-wl)}` : `📈 ចំណេញ ៛${riel(wl)}`);
+
+/**
+ * The lottery daily report (data.items[].upperLineSale with a summary and one
+ * item per draw): the day's result on top (profit or loss, the user/company
+ * split, bet and payout, and the change from the day before when `prevWl` is
+ * known), then per lottery its result and, folded in an expandable quote, a
+ * table of draws by Phnom Penh time; then the same for `data2` (the second
+ * URL's reply) as 📤 សាង. Returns HTML, or null when the reply isn't that shape.
+ */
+function formatLottery(data, prevWl = null, data2 = null) {
+  const lotteries = lotteriesOf(data);
+  if (!lotteries) return null;
   if (!lotteries.length) {
     // The report exists but no draw has a result yet (e.g. early in the day).
-    const amounts = (body.underSummary?.totalAmounts ?? []).filter((t) => Number(t.totalAmountKhr) || Number(t.totalAmountUsd));
+    const amounts = (data.data.underSummary?.totalAmounts ?? []).filter((t) => Number(t.totalAmountKhr) || Number(t.totalAmountUsd));
     const lines = ['⏳ មិនទាន់មានលទ្ធផលឆ្នោតនៅឡើយ។'];
     if (amounts.length) {
       lines.push('', '<b>ចំនួនសរុប</b>');
@@ -377,10 +455,39 @@ function formatLottery(data) {
     }
     return lines.join('\n');
   }
+
+  const total = lotteryTotals(lotteries);
+  const share = lotteries[0].summary;
+  const out = [
+    `<b>${profit(total.wl)}</b>`,
+    `👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`,
+    `ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`,
+  ];
+  if (total.usd) out.push(`💵 USD: $${total.usd.toFixed(2)}`);
+  if (prevWl) {
+    const pct = Math.round(((total.wl - prevWl) / Math.abs(prevWl)) * 100);
+    out.push(`ធៀបម្សិលមិញ (៛${riel(prevWl)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
+  }
+
+  out.push(...lotterySections(lotteries));
+
+  // The second URL's reply (e.g. isSend=true), when it has draws: its own
+  // result and lotteries, below the main ones.
+  const second = lotteriesOf(data2);
+  if (second?.length) {
+    const t2 = lotteryTotals(second);
+    const draws = second.reduce((n, u) => n + u.items.length, 0);
+    out.push('', '━━━━━━━━━━━━', `<b>📤 សាង · ${profit(t2.wl)}</b>`, `ចាក់ ៛${riel(t2.bet)} · សង ៛${riel(t2.reward)} · ${draws} វេន`);
+    out.push(...lotterySections(second));
+  }
+  return out.join('\n');
+}
+
+/** Per lottery: its result, then its draws by time in a table folded into an expandable quote. */
+function lotterySections(lotteries) {
   const line = (a, b, c, d) => `${String(a).padEnd(8)}${String(b).padStart(9)}${String(c).padStart(9)}${String(d).padStart(9)}`;
   const rule = '─'.repeat(35);
   const out = [];
-  const total = { bet: 0, reward: 0, wl: 0, user: 0, company: 0, usd: 0 };
   for (const u of lotteries) {
     const s = u.summary;
     const rows = [...u.items].sort((a, b) => String(a.drawAtPP ?? a.drawAt).localeCompare(String(b.drawAtPP ?? b.drawAt)));
@@ -391,30 +498,21 @@ function formatLottery(data) {
       rule,
       line('Total', riel(s.commissionKhr), riel(s.rewardAmountKhr), riel(s.winLoseAmountKhr)),
     ];
-    out.push(`<b>🎰 ${escape(u.lotteryType)}</b> · ${rows.length} វេន`, `<pre>${escape(table.join('\n'))}</pre>`);
-    out.push(`👤 ${escape(s.userSendShare ?? '')} ៛${riel(s.winLoseAmountKhrUser)} · 🏢 ${escape(s.companySendShare ?? '')} ៛${riel(s.winLoseAmountKhrCompany)}`);
-    if (Number(s.winLoseAmountUsd)) out.push(`💵 ឈ្នះ/ចាញ់ USD: $${Number(s.winLoseAmountUsd).toFixed(2)}`);
-    out.push('');
-    total.bet += Number(s.commissionKhr) || 0;
-    total.reward += Number(s.rewardAmountKhr) || 0;
-    total.wl += Number(s.winLoseAmountKhr) || 0;
-    total.user += Number(s.winLoseAmountKhrUser) || 0;
-    total.company += Number(s.winLoseAmountKhrCompany) || 0;
-    total.usd += Number(s.winLoseAmountUsd) || 0;
-  }
-  if (lotteries.length > 1) {
     out.push(
-      '<b>💰 សរុបទាំងអស់</b>',
-      `ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`,
-      `<b>ឈ្នះ/ចាញ់ ៛${riel(total.wl)}</b> · 👤 ៛${riel(total.user)} · 🏢 ៛${riel(total.company)}`,
+      '',
+      `<b>🎰 ${escape(u.lotteryType)}</b> · ${rows.length} វេន · ${profit(Number(s.winLoseAmountKhr) || 0)}`,
+      `<blockquote expandable><pre>${escape(table.join('\n'))}</pre></blockquote>`,
     );
-    if (total.usd) out.push(`💵 ឈ្នះ/ចាញ់ USD: $${total.usd.toFixed(2)}`);
   }
-  return out.join('\n').trim();
+  return out;
 }
 
-/** A saved report as a Telegram message (HTML): known report shapes laid out, other JSON as key/value lines, anything else as text. */
-export function formatReport(group, row) {
+/**
+ * A saved report as a Telegram message (HTML): known report shapes laid out,
+ * other JSON as key/value lines, anything else as text. `prev` is the day
+ * before's snapshot, for the lottery report's comparison.
+ */
+export function formatReport(group, row, prev = null) {
   const [y, m, d] = row.day.split('-');
   const head = `<b>📥 ${REPORT_NAME} · ${d}/${m}/${y}</b>\n🏪 ${escape(group.name ?? group.tgId)}`;
   const foot = row.ranAt ? `\n\n<i>🕘 ទាញយកម៉ោង ${formatTime(row.ranAt)}</i>` : '';
@@ -425,7 +523,13 @@ export function formatReport(group, row) {
   } catch {
     data = null;
   }
-  const lottery = formatLottery(data);
+  let data2 = null;
+  try {
+    data2 = row.body2 ? JSON.parse(row.body2) : null;
+  } catch {
+    // not JSON: nothing to add
+  }
+  const lottery = formatLottery(data, snapshotWinLose(prev), data2);
   if (lottery) return `${head}\n\n${lottery.length > 3800 ? `${lottery.slice(0, 3800)}…` : lottery}${foot}`;
   let body;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
@@ -490,7 +594,7 @@ export async function dayReportScreen(group, day, { refresh = false } = {}) {
   const nav = [btn(`◀ ${dm(prev)}`, `DREP_${prev}`)];
   if (next <= todayKey) nav.push(btn(`${dm(next)} ▶`, `DREP_${next}`));
   return {
-    text: formatReport(group, row),
+    text: formatReport(group, row, await reportForDay(group.id, prev)),
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [

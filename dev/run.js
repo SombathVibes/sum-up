@@ -67,14 +67,24 @@ if (hook.url) {
 const me = await callApi('getMe');
 console.log(`▶ @${me.username} running locally (${Object.keys(handlers).join(', ')}), db: ${dbFile}`);
 
-// Daily report: on the platform the sync helper's cron sends /dailyrun; here a
-// timer runs the same check every minute (DEV_DAILY=0 turns it off).
+// Lottery report and agent days: on the platform the sync helper's cron sends
+// /dailyrun; here a timer runs the same work every minute (DEV_DAILY=0 turns it off).
 if (process.env.DEV_DAILY !== '0') {
-  const { runDue } = await import(new URL('lib/daily.js', root).href);
-  setInterval(() => {
-    runDue()
-      .then((ran) => ran.forEach(({ group, row }) => console.log(`${row.ok ? '✓' : '✗'} daily report ${group.name ?? group.tgId}: ${row.ok ? `HTTP ${row.httpStatus}` : row.error}`)))
-      .catch((e) => console.error('✗ daily report', e));
+  const { dailyConfig, runDue } = await import(new URL('lib/daily.js', root).href);
+  const { collectYesterday } = await import(new URL('lib/agents.js', root).href);
+  const { listGroups } = await import(new URL('lib/store.js', root).href);
+  setInterval(async () => {
+    try {
+      for (const { group, row } of await runDue()) console.log(`${row.ok ? '✓' : '✗'} daily report ${group.name ?? group.tgId}: ${row.ok ? `HTTP ${row.httpStatus}` : row.error}`);
+      const signedIn = [];
+      for (const g of await listGroups()) {
+        const cfg = await dailyConfig(g.id);
+        if (cfg.enabled && cfg.authType === 'login') signedIn.push(g);
+      }
+      await collectYesterday(signedIn);
+    } catch (e) {
+      console.error('✗ daily report', e);
+    }
   }, 60_000);
 }
 

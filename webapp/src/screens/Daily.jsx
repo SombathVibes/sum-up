@@ -11,6 +11,7 @@ import { timeOf } from '../format.js';
 const STEPS = [1, 2, 3, 4, 6, 12];
 const FIELD_ERRORS = {
   url: 'សូមដាក់ URL ត្រឹមត្រូវ (https://…)',
+  url2: 'URL ទី២ មិនត្រឹមត្រូវ (https://…)',
   times: 'សូមជ្រើសម៉ោងយ៉ាងហោចណាស់មួយ',
   loginUrl: 'សូមដាក់ Login URL ត្រឹមត្រូវ (https://…)',
   username: 'សូមដាក់ Username',
@@ -144,6 +145,14 @@ export default function DailyPanel({ group }) {
           <button className="chip" onClick={() => insert('{date}')}>+ {'{date}'} <span className="muted">ថ្ងៃ</span></button>
           <button className="chip" onClick={() => insert('{group}')}>+ {'{group}'} <span className="muted">ID ក្រុម</span></button>
         </div>
+        <label className="label">
+          <span className="muted small">URL ទី២ (ស្រេចចិត្ត) · ហៅរាល់ពេលជាមួយ URL ទី១ ហើយរក្សាទុកទាំងពីរ</span>
+          <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            placeholder="https://example.com/report?date={date}&isSend=true" value={form.url2} onChange={(e) => set({ url2: e.target.value })} />
+          {form.url && !form.url2 && (
+            <button type="button" className="chip" onClick={() => set({ url2: `${form.url}${form.url.includes('?') ? '&' : '?'}isSend=true` })}>+ ចម្លង URL ទី១ + isSend=true</button>
+          )}
+        </label>
 
         <label className="label">
           <span className="muted small">Header បន្ថែម (Login និង URL) · មួយបន្ទាត់ម្ដង «Name: value»</span>
@@ -295,6 +304,12 @@ export default function DailyPanel({ group }) {
                 {openKey === key && (
                   <>
                     <pre className="body">{r.body || '—'}</pre>
+                    {(r.body2 || r.error2) && (
+                      <>
+                        <div className="muted small">URL ទី២{r.error2 ? ` · ⚠️ ${r.error2}` : ''}</div>
+                        {r.body2 && <pre className="body">{r.body2}</pre>}
+                      </>
+                    )}
                     <div className="muted small">ហៅនៅ {timeOf(r.ranAt)}</div>
                   </>
                 )}

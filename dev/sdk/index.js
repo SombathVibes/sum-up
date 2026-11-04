@@ -45,8 +45,18 @@ export async function callApi(method, params = {}) {
   return body.result;
 }
 
-/** api.<anyMethod>(params) → unwrapped result, like the platform's api. */
-export const api = new Proxy({}, { get: (_, method) => (params) => callApi(method, params) });
+/** A file's bytes by file_id, like the platform's api.getFileContent (getFile, then the download URL). */
+async function getFileContent(fileId) {
+  const file = await callApi('getFile', { file_id: fileId });
+  const res = await fetch(`${API_BASE}/file/bot${process.env.BOT_TOKEN}/${file.file_path}`);
+  if (!res.ok) throw new Error(`getFileContent: HTTP ${res.status}`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
+/** api.<anyMethod>(params) → unwrapped result, like the platform's api (plus getFileContent). */
+export const api = new Proxy({}, {
+  get: (_, method) => (method === 'getFileContent' ? getFileContent : (params) => callApi(method, params)),
+});
 
 const fetchWithHelpers = (...args) => globalThis.fetch(...args);
 export { fetchWithHelpers as fetch };

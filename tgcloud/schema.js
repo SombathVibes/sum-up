@@ -101,6 +101,10 @@ export const reportSources = table('report_sources', {
   groupId:     integer('group_id').primaryKey(),
   enabled:     boolean('enabled').notNull().default(false),
   url:         text('url').notNull().default(''),
+  // Optional second report URL, fetched on every run with the same login and
+  // headers and saved alongside (snapshot body2), e.g. the same report with
+  // isSend=true.
+  url2:        text('url2').notNull().default(''),
   times:       text('times').notNull().default('21:00'),
   postToGroup: boolean('post_to_group').notNull().default(true),
   // Sign-in for APIs that need it. 'login': POST { username, password } as
@@ -125,23 +129,53 @@ export const reportSources = table('report_sources', {
   token:       text('token').notNull().default(''),
 });
 
-// Report snapshot: one fetch per group, day and slot (the scheduled 'HH:MM'
-// it ran for; a manual run uses the minute it ran). A re-run replaces it.
-// body is the response: for the lottery report only the fields it shows
-// (~3 KB instead of ~70 KB), otherwise the text cut at 300 KB. Kept 90 days.
+// Report snapshot: the latest fetch per group and day; each run replaces it,
+// except that a failed run keeps the last good one. slot is the scheduled
+// 'HH:MM' it last ran for (a manual run: the minute it ran), so a time isn't
+// run twice. body is the response: for the lottery report only the fields it
+// shows (~4 KB instead of ~70 KB), otherwise the text cut at 300 KB. Kept
+// 7 days; older days are fetched again when picked.
 export const reportSnapshots = table('report_snapshots', {
   id:         integer('id').primaryKey({ autoIncrement: true }),
   groupId:    integer('group_id').notNull(),
   day:        text('day').notNull(), // 'YYYY-MM-DD', Phnom Penh
-  slot:       text('slot').notNull().default(''), // 'HH:MM', Phnom Penh
+  slot:       text('slot').notNull().default(''), // 'HH:MM', Phnom Penh: the time it last ran for
   ranAt:      integer('ran_at').notNull(),
   ok:         boolean('ok').notNull().default(false),
   httpStatus: integer('http_status').notNull().default(0),
   body:       text('body').notNull().default(''),
   error:      text('error'),
+  // The second URL's reply (report_sources.url2), stored the same way; empty when there is none.
+  body2:      text('body2').notNull().default(''),
+  error2:     text('error2'),
 }, (t) => ({
-  // One per slot; also serves "this group's reports for a day / a few days".
-  slot:   uniqueIndex('report_snapshots_slot_uniq').on(t.groupId, t.day, t.slot),
-  // The Mini App's newest-first list.
-  recent: index('idx_report_snapshots_recent').on(t.groupId, t.ranAt),
+  // One per group and day; also serves a group's last few days, newest first.
+  day: uniqueIndex('report_snapshots_day_uniq').on(t.groupId, t.day),
+}));
+
+// Lottery agents under a group's report login, found through the API (the
+// login's user code → user/list-user-levels?filterByLevel=agent) for the
+// agent Excel report (lib/agents.js). groupId is groups.id; userCode is the
+// lottery system's code for the agent.
+export const lotteryAgents = table('lottery_agents', {
+  id:       integer('id').primaryKey({ autoIncrement: true }),
+  groupId:  integer('group_id').notNull(),
+  userCode: text('user_code').notNull(),
+  username: text('username').notNull(),
+  nickname: text('nickname').notNull().default(''),
+}, (t) => ({
+  uniq: uniqueIndex('lottery_agents_group_code_uniq').on(t.groupId, t.userCode),
+}));
+
+// One finished day of an agent's figures, fetched once (a day that is over
+// doesn't change) and reused for every Excel of that month: data is JSON
+// { daily: { 'C5': 52700, … }, m1: [member rows], m3: [សាង member rows] }.
+// Kept about three months.
+export const agentDays = table('agent_days', {
+  id:        integer('id').primaryKey({ autoIncrement: true }),
+  agentCode: text('agent_code').notNull(),
+  day:       text('day').notNull(), // 'YYYY-MM-DD', Phnom Penh
+  data:      text('data').notNull(),
+}, (t) => ({
+  uniq: uniqueIndex('agent_days_code_day_uniq').on(t.agentCode, t.day),
 }));

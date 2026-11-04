@@ -5,11 +5,12 @@
 
 import { api } from 'sdk';
 import { addPrompt, adminPanel, teamMemberScreen } from '../lib/admin.js';
+import { TEMPLATE_KEY, TEMPLATE_NAME_KEY, checkTemplate, collectYesterday } from '../lib/agents.js';
 import { accessStatus, recordPayment, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig, pushSchedule, runDue } from '../lib/daily.js';
 import { parseAmount } from '../lib/parse.js';
-import { getGroup, hasActiveSubscription, saveMessages, setSetting } from '../lib/store.js';
+import { getGroup, hasActiveSubscription, listGroups, saveMessages, setSetting } from '../lib/store.js';
 import { addAdmin, canManage, isSuper, roleIn } from '../lib/roles.js';
 import { parseCommand, sendScreen, sendSupport } from '../lib/telegram.js';
 import { menuKeyboard, menuText, syncMenu } from '../lib/ui.js';
@@ -57,6 +58,13 @@ export default async function (message) {
         await api.deleteMessage({ chat_id: chatId, message_id: message.message_id }).catch(() => {});
         const ran = await runDue();
         await pushSchedule();
+        // Agent Excel: save yesterday for the agents of groups whose report is on and signs in.
+        const signedIn = [];
+        for (const g of await listGroups()) {
+          const cfg = await dailyConfig(g.id);
+          if (cfg.enabled && cfg.authType === 'login') signedIn.push(g);
+        }
+        await collectYesterday(signedIn);
         // Quiet when everything worked; failures are worth a message.
         const failed = ran.filter((r) => !r.row.ok);
         if (failed.length) {
@@ -86,6 +94,25 @@ export default async function (message) {
         }
         await setSetting('payment_qr', photo.file_id);
         await api.sendMessage({ chat_id: chatId, text: '✅ Payment QR saved. It now shows on ⭐ ការជាវ.' });
+        break;
+      }
+
+      case 'settemplate': {
+        // A super admin sends the agent Excel template (.xlsx) as a file with the caption /settemplate.
+        if (inGroup || !(await isSuper(message.from))) break;
+        const doc = message.document;
+        if (!doc || !/\.xlsx$/i.test(doc.file_name ?? '')) {
+          await api.sendMessage({ chat_id: chatId, text: 'ផ្ញើឯកសារ template.xlsx ជាមួយ caption /settemplate។' });
+          break;
+        }
+        const problem = await checkTemplate(await api.getFileContent(doc.file_id));
+        if (problem) {
+          await api.sendMessage({ chat_id: chatId, text: `⚠️ Template មិនត្រឹមត្រូវ: ${problem}` });
+          break;
+        }
+        await setSetting(TEMPLATE_KEY, doc.file_id);
+        await setSetting(TEMPLATE_NAME_KEY, doc.file_name);
+        await api.sendMessage({ chat_id: chatId, text: `✅ បានរក្សាទុក template (${doc.file_name})។ Excel ភ្នាក់ងារនឹងប្រើវាចាប់ពីពេលនេះ។` });
         break;
       }
 

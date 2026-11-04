@@ -1,7 +1,7 @@
 // Button presses from the /menu and /sync keyboards, in groups and in a bot
 // admin's private-chat panel.
 
-import { api, BotApiError } from 'sdk';
+import { api, BotApiError, InputFile } from 'sdk';
 
 // Telegram rejects answers to taps it considers too old (e.g. made while the
 // bot was restarting); the tap's work still goes ahead.
@@ -23,6 +23,7 @@ import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig, dayPicker, dayReportScreen } from '../lib/daily.js';
+import { agentListScreen, getAgent, monthScreen, sendAgentExcel } from '../lib/agents.js';
 import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
@@ -113,6 +114,9 @@ export default async function (query) {
       return handleSync(data, target, show, query.from, role);
     }
 
+    // 📊 Agent Excel: only in the private admin panel (where canView was checked above).
+    if (/^XL(SYNC|[AM]_|$)/.test(data) && !scopedId) return refuse('ប្រើក្នុង chat ផ្ទាល់ជាមួយ bot 🔒');
+
     // A trailing '!' is the report's Refresh button: catch up through the sync
     // helper first (payments missed while the bot was down), then redraw.
     const refresh = data.endsWith('!');
@@ -146,16 +150,43 @@ export default async function (query) {
       return showScreen(await dayReportScreen(group, key.slice(fresh ? 6 : 5), { refresh: fresh }));
     }
 
+    // 📊 Agent Excel (private admin panel only, checked above): XL lists the group's
+    // agents, XLSYNC refreshes them, XLA_<id> picks a month, XLM_<id>_<YYYY-MM> builds
+    // it and sends it to that private chat.
+    if (key === 'XL' || key === 'XLSYNC' || key.startsWith('XLA_') || key.startsWith('XLM_')) {
+      if (key === 'XL' || key === 'XLSYNC') return showScreen(await agentListScreen(group, { refresh: key === 'XLSYNC' }));
+      const [, id, month] = /^XL[AM]_(\d+)(?:_(\d{4}-\d\d))?$/.exec(key) ?? [];
+      const agent = id && (await getAgent(Number(id)));
+      if (!agent || agent.groupId !== group.id) return showScreen(await agentListScreen(group));
+      if (key.startsWith('XLA_') || !month) return showScreen(monthScreen(agent));
+      await show(`⏳ កំពុងរៀបចំ Excel ${agent.username} · ${month}…`);
+      try {
+        return showScreen(await sendAgentExcel(group, agent, month, query.from.id, api, InputFile, isPrivate));
+      } catch (e) {
+        console.error('agent excel failed', e);
+        // The bot can only message people who have started it.
+        const blocked = e instanceof BotApiError && e.code === 403;
+        return show(blocked ? '⚠️ សូមបើក chat ជាមួយ bot ហើយចុច Start ជាមុន ទើប bot អាចផ្ញើ Excel ទៅអ្នកបាន។' : `⚠️ ${String(e.message ?? e).slice(0, 300)}`, { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: `XLA_${agent.id}` }]] } });
+      }
+    }
+
     switch (key) {
       // Menus are built for whoever tapped, so only admins see the Sync row.
       case 'BACK': {
         const status = await accessStatus(group);
-        const { inline_keyboard } = menuKeyboard(manager, status, (await dailyConfig(group.id)).enabled);
+        const cfg = await dailyConfig(group.id);
+        // 📊 Excel ភ្នាក់ងារ only in the private panel, for groups whose report signs in.
+        const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled, !!scopedId && cfg.authType === 'login');
         // In the private panel: the group's name on top, and a way back to all groups.
         if (scopedId) {
           return show(`${await groupTitle(group)}\n${menuText(status)}`, {
             parse_mode: 'HTML',
-            reply_markup: { inline_keyboard: [...inline_keyboard.filter((r) => r[0]?.callback_data !== 'CLOSE'), [{ text: '🛠 ក្រុមទាំងអស់', callback_data: 'ADMIN_HOME' }]] },
+            reply_markup: {
+              inline_keyboard: [
+                ...inline_keyboard.filter((r) => r[0]?.callback_data !== 'CLOSE'),
+                [{ text: '🛠 ក្រុមទាំងអស់', callback_data: 'ADMIN_HOME' }],
+              ],
+            },
           });
         }
         return show(menuText(status), { reply_markup: { inline_keyboard } });

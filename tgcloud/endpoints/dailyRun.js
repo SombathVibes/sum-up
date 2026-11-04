@@ -13,5 +13,5 @@ export default async function (input, ctx) {
   const cfg = await dailyConfig(group.id, { secret: true });
   if (!cfg.url) throw new EndpointError('Save a URL first.', { code: 'NO_URL' });
   const row = await runDaily(group, { ...cfg, postToGroup: !!input.post && cfg.postToGroup });
-  return { day: row.day, slot: row.slot, ranAt: row.ranAt, ok: row.ok, httpStatus: row.httpStatus, error: row.error, body: row.body.slice(0, 4000) };
+  return { day: row.day, slot: row.slot, ranAt: row.ranAt, ok: row.ok, httpStatus: row.httpStatus, error: row.error, body: row.body.slice(0, 4000), body2: row.body2.slice(0, 4000), error2: row.error2 };
 }

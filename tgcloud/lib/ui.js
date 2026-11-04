@@ -21,13 +21,19 @@ const SUBSCRIBE_ROW_DAYS = 10;
  * row. The subscription row is hidden for lifetime groups and while more than
  * SUBSCRIBE_ROW_DAYS days remain.
  */
-export const menuKeyboard = (admin = false, status = null, dailyReport = false) => keyboard([
+/**
+ * The group menu, built for whoever opened it: admin (manager) adds ⚙️ Sync,
+ * dailyReport the 📥 lottery report (switched on for the group), agentExcel
+ * 📊 Excel ភ្នាក់ងារ (the private admin panel, and the group's report signs in).
+ */
+export const menuKeyboard = (admin = false, status = null, dailyReport = false, agentExcel = false) => keyboard([
   [btn('ប្រចាំថ្ងៃ', 'DAILY')],
   [btn('ប្រចាំសប្ដាហ៍', 'WEEKLY')],
   [btn('ប្រចាំខែ', 'MONTHLY')],
   // Only groups a super admin switched Daily report on for (lib/daily.js).
   dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DREPORT')] : [],
   !status || (status.kind !== 'lifetime' && status.daysLeft <= SUBSCRIBE_ROW_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
+  agentExcel ? [btn('📊 Excel ភ្នាក់ងារ', 'XL')] : [],
   admin ? [btn('⚙️ Sync', 'SYNC_MENU')] : [],
   [btn('បិទ', 'CLOSE')],
 ]);
