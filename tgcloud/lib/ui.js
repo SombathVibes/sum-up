@@ -26,7 +26,7 @@ export const menuKeyboard = (admin = false, status = null, dailyReport = false) 
   [btn('ប្រចាំសប្ដាហ៍', 'WEEKLY')],
   [btn('ប្រចាំខែ', 'MONTHLY')],
   // Only groups a super admin switched Daily report on for (lib/daily.js).
-  dailyReport ? [btn('📥 Daily report', 'DREPORT')] : [],
+  dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DREPORT')] : [],
   !status || (status.kind !== 'lifetime' && status.daysLeft <= SUBSCRIBE_ROW_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
   admin ? [btn('⚙️ Sync', 'SYNC_MENU')] : [],
   [btn('បិទ', 'CLOSE')],

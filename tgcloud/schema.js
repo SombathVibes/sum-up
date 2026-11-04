@@ -92,12 +92,12 @@ export const adminGroups = table('admin_groups', {
   byGroup: index('idx_admin_groups_group').on(t.groupId),
 }));
 
-// Daily report (off by default; super admins switch it on per group): at each
-// of `times` (Phnom Penh, 'HH:MM,HH:MM', sorted) the bot calls `url` and saves
-// what it returns.
-// In the URL, {date} becomes the day ('YYYY-MM-DD') and {group} the group's
-// Telegram id. groupId is groups.id.
-export const dailyConfigs = table('daily_configs', {
+// Report source: one per group (off by default; super admins switch it on).
+// At each of `times` (Phnom Penh, 'HH:MM,HH:MM', sorted) the bot calls `url`
+// and saves what it returns as a snapshot (lib/daily.js). In the URL, {date}
+// becomes the day ('YYYY-MM-DD') and {group} the group's Telegram id.
+// groupId is groups.id.
+export const reportSources = table('report_sources', {
   groupId:     integer('group_id').primaryKey(),
   enabled:     boolean('enabled').notNull().default(false),
   url:         text('url').notNull().default(''),
@@ -113,13 +113,23 @@ export const dailyConfigs = table('daily_configs', {
   username:    text('username').notNull().default(''),
   password:    text('password').notNull().default(''),
   tokenField:  text('token_field').notNull().default(''),
-  updatedAt:   integer('updated_at').notNull().default(sql`(unixepoch())`),
+  // Optional HTTP Basic auth on the login request itself: the ready-made
+  // credentials (base64 of 'id:secret', without 'Basic '). Shown in the Mini
+  // App so it can be checked (unlike password).
+  basicAuth:   text('basic_auth').notNull().default(''),
+  // Extra request headers sent on both the login and the report call, one
+  // 'Name: value' per line (e.g. 'X-Platform: web').
+  headers:     text('headers').notNull().default(''),
+  // The last token from login, reused until it expires (JWT exp) or the
+  // report call answers 401; cleared whenever the settings are saved.
+  token:       text('token').notNull().default(''),
 });
 
-// One fetched report per group, day and slot (the scheduled 'HH:MM' it ran
-// for; a manual run uses the minute it ran). A re-run replaces it. body is the
-// response text, cut at 100 KB.
-export const dailyReports = table('daily_reports', {
+// Report snapshot: one fetch per group, day and slot (the scheduled 'HH:MM'
+// it ran for; a manual run uses the minute it ran). A re-run replaces it.
+// body is the response: for the lottery report only the fields it shows
+// (~3 KB instead of ~70 KB), otherwise the text cut at 300 KB. Kept 90 days.
+export const reportSnapshots = table('report_snapshots', {
   id:         integer('id').primaryKey({ autoIncrement: true }),
   groupId:    integer('group_id').notNull(),
   day:        text('day').notNull(), // 'YYYY-MM-DD', Phnom Penh
@@ -130,5 +140,8 @@ export const dailyReports = table('daily_reports', {
   body:       text('body').notNull().default(''),
   error:      text('error'),
 }, (t) => ({
-  uniq: uniqueIndex('daily_reports_slot_uniq').on(t.groupId, t.day, t.slot),
+  // One per slot; also serves "this group's reports for a day / a few days".
+  slot:   uniqueIndex('report_snapshots_slot_uniq').on(t.groupId, t.day, t.slot),
+  // The Mini App's newest-first list.
+  recent: index('idx_report_snapshots_recent').on(t.groupId, t.ranAt),
 }));

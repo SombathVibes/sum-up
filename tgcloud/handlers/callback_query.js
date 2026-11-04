@@ -22,7 +22,7 @@ import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
-import { dailyConfig, formatReport, latestReport } from '../lib/daily.js';
+import { dailyConfig, dayPicker, dayReportScreen } from '../lib/daily.js';
 import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
@@ -136,6 +136,16 @@ export default async function (query) {
     }
 
     const now = today();
+    // 📥 lottery report (lib/daily.js): DREPORT / DRWK_<page> pick a day, DREP_<day> shows it, DREP!_<day> fetches it again.
+    if (key === 'DREPORT' || key.startsWith('DRWK_') || key.startsWith('DREP_') || key.startsWith('DREP!_')) {
+      if (!(await dailyConfig(group.id)).enabled) {
+        return show('📥 មុខងារនេះមិនទាន់បើកសម្រាប់ក្រុមនេះទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
+      }
+      if (key === 'DREPORT' || key.startsWith('DRWK_')) return showScreen(await dayPicker(group, Number(key.slice(5)) || 0));
+      const fresh = key.startsWith('DREP!_');
+      return showScreen(await dayReportScreen(group, key.slice(fresh ? 6 : 5), { refresh: fresh }));
+    }
+
     switch (key) {
       // Menus are built for whoever tapped, so only admins see the Sync row.
       case 'BACK': {
@@ -149,14 +159,6 @@ export default async function (query) {
           });
         }
         return show(menuText(status), { reply_markup: { inline_keyboard } });
-      }
-      case 'DREPORT': {
-        if (!(await dailyConfig(group.id)).enabled) return show(...menu({ text: '📥 Daily report is off for this group.', reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } }));
-        const row = await latestReport(group.id);
-        return show(row ? formatReport(group, row) : '<b>📥 Daily report</b>\nមិនទាន់មានរបាយការណ៍ទេ។', {
-          parse_mode: 'HTML',
-          reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] },
-        });
       }
       case 'DAILY':   return show(...menu(dailyMenu(now)));
       case 'WEEKLY':  return show(...menu(weeklyMenu(now)));

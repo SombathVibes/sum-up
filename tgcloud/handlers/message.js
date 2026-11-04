@@ -62,7 +62,7 @@ export default async function (message) {
         if (failed.length) {
           await api.sendMessage({
             chat_id: chatId,
-            text: `⚠️ Daily report: ${failed.length}/${ran.length} failed\n${failed.map((r) => `• ${r.group.name ?? r.group.tgId}: ${r.row.error}`).join('\n')}`,
+            text: `⚠️ របាយការណ៍ឆ្នោត: បរាជ័យ ${failed.length}/${ran.length}\n${failed.map((r) => `• ${r.group.name ?? r.group.tgId}: ${r.row.error}`).join('\n')}`,
           });
         }
         break;

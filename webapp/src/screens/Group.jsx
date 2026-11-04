@@ -53,7 +53,7 @@ export default function Group({ group, startView, onClose, onChanged }) {
       <div className="segmented">
         <button className={view === 'report' ? 'on' : ''} onClick={() => setView('report')}>📊 របាយការណ៍</button>
         <button className={view === 'billing' ? 'on' : ''} onClick={() => setView('billing')}>⭐ ការជាវ</button>
-        {group.role === 'super' && <button className={view === 'daily' ? 'on' : ''} onClick={() => setView('daily')}>📥 Daily</button>}
+        {group.role === 'super' && <button className={view === 'daily' ? 'on' : ''} onClick={() => setView('daily')}>📥 ឆ្នោត</button>}
       </div>
 
       {view === 'daily' && <DailyPanel group={group} />}

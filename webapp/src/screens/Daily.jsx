@@ -16,6 +16,8 @@ const FIELD_ERRORS = {
   username: 'សូមដាក់ Username',
   password: 'សូមដាក់ Password',
   tokenField: 'ឈ្មោះ token field មិនត្រឹមត្រូវ',
+  basicAuth: 'សូមដាក់ Basic auth (តម្លៃដែលបានបង្កើត)',
+  headers: 'Header ត្រូវតែជា «Name: value» មួយបន្ទាត់ម្ដង',
 };
 const KH_DIGITS = '០១២៣៤៥៦៧៨៩';
 const kh = (n) => String(n).replace(/\d/g, (d) => KH_DIGITS[d]);
@@ -67,10 +69,11 @@ export default function DailyPanel({ group }) {
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState(null);
   const [openKey, setOpenKey] = useState(null); // `${day} ${slot}`
+  const [showPw, setShowPw] = useState(false);
 
   // The password is write-only: the form starts empty and the server only says hasPassword.
   const fill = (config) => {
-    setForm({ ...config, password: '' });
+    setForm({ ...config, password: '', useBasic: config.hasBasicAuth });
     const m = modeOf(config.times);
     setMode(m.mode);
     if (m.span) setSpan(m.span);
@@ -82,7 +85,7 @@ export default function DailyPanel({ group }) {
   if (!form) return <main className="content"><p className="center muted">កំពុងផ្ទុក…</p></main>;
 
   const set = (patch) => { setForm({ ...form, ...patch }); setNote(null); setError(null); };
-  const dirty = JSON.stringify(form) !== JSON.stringify({ ...data.config, password: '' });
+  const dirty = JSON.stringify(form) !== JSON.stringify({ ...data.config, password: '', useBasic: data.config.hasBasicAuth });
   const saved = data.config;
 
   const pickMode = (m) => {
@@ -126,10 +129,10 @@ export default function DailyPanel({ group }) {
       <section className="card">
         <div className="row">
           <div className="grow">
-            <strong>📥 Daily report</strong>
+            <strong>📥 របាយការណ៍ឆ្នោត</strong>
             <div className={`small ${saved.enabled ? 'ok' : 'muted'}`}>{status}</div>
           </div>
-          <Switch on={form.enabled} onChange={(enabled) => set({ enabled })} label="Daily report" />
+          <Switch on={form.enabled} onChange={(enabled) => set({ enabled })} label="របាយការណ៍ឆ្នោត" />
         </div>
       </section>
 
@@ -142,6 +145,11 @@ export default function DailyPanel({ group }) {
           <button className="chip" onClick={() => insert('{group}')}>+ {'{group}'} <span className="muted">ID ក្រុម</span></button>
         </div>
 
+        <label className="label">
+          <span className="muted small">Header បន្ថែម (Login និង URL) · មួយបន្ទាត់ម្ដង «Name: value»</span>
+          <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            placeholder="X-Platform: web" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
+        </label>
         <div className="row divided">
           <div className="grow">
             <div className="small">🔐 ត្រូវការ Login</div>
@@ -163,9 +171,26 @@ export default function DailyPanel({ group }) {
             </label>
             <label className="label">
               <span className="muted small">Password {data.config.hasPassword && <span className="ok">· បានរក្សាទុក ✓</span>}</span>
-              <input className="field" type="password" autoComplete="new-password"
-                placeholder={data.config.hasPassword ? 'ទុកទទេ ដើម្បីប្រើដដែល' : ''} value={form.password} onChange={(e) => set({ password: e.target.value })} />
+              <div className="row">
+                <input className="field grow" type={showPw ? 'text' : 'password'} autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                  placeholder={data.config.hasPassword ? 'ទុកទទេ ដើម្បីប្រើដដែល' : ''} value={form.password} onChange={(e) => set({ password: e.target.value })} />
+                <button type="button" className="icon" onClick={() => setShowPw(!showPw)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? '🙈' : '👁'}</button>
+              </div>
             </label>
+            <div className="row">
+              <div className="grow">
+                <div className="small">Basic auth លើ Login</div>
+                <div className="muted small">បិទភ្ជាប់តម្លៃ Basic ដែលបានបង្កើតរួច</div>
+              </div>
+              <Switch on={form.useBasic} onChange={(useBasic) => set({ useBasic, basicAuth: useBasic ? data.config.basicAuth : '' })} label="Basic auth" />
+            </div>
+            {form.useBasic && (
+              <label className="label">
+                <span className="muted small">Basic auth (តម្លៃដែលបានបង្កើត)</span>
+                <input className="field mono" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                  placeholder="Basic dXNlcjpwYXNz…" value={form.basicAuth} onChange={(e) => set({ basicAuth: e.target.value })} />
+              </label>
+            )}
             <details>
               <summary className="muted small">កម្រិតខ្ពស់</summary>
               <label className="label">
