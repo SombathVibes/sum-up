@@ -50,7 +50,19 @@ A web app inside Telegram for admins (`webapp/`, Vite + React), hosted by Telegr
 - **Settings** (super admins): the monthly price and currency, bank, account name and number, payment instructions and the support link. They're saved in the `settings` table (key `payment`, only the fields that differ from `config.js`), and ⭐ ការជាវ, Renew and `/paysupport` use them right away. The QR photo is still set with `/setqr`.
 - **Login:** none to build. Telegram signs the user into the init data, the platform verifies it before an endpoint runs, and each endpoint checks the role (`tgcloud/lib/endpoint.js`): viewers see their groups, managers can renew. Outside Telegram the endpoints refuse every call.
 - **Opening it:** set `MINIAPP_URL` in `tgcloud/lib/config.js` to the address `npm run deploy` prints (`https://app<app_id>.tgcloud.ai/`), and the private admin panel gets a **🖥 Admin app** button.
-- **Endpoints** (`tgcloud/endpoints/`): `me`, `groups`, `groupReport`, `groupPayments`, `sendCsv`, `groupHistory`, `renew`, `lifetime`, `team`, `teamRole`, `teamSuper`, `teamRemove`, `settings`, `settingsSave`. The page calls them with `Telegram.WebApp.Serverless.call` when it's hosted on `tgcloud.ai`, and with `fetch('/api/<name>')` otherwise (local testing).
+- **Endpoints** (`tgcloud/endpoints/`): `me`, `groups`, `groupReport`, `groupPayments`, `sendCsv`, `groupHistory`, `renew`, `lifetime`, `team`, `teamRole`, `teamSuper`, `teamRemove`, `settings`, `settingsSave`, `dailyGet`, `dailySave`, `dailyRun`. The page calls them with `Telegram.WebApp.Serverless.call` when it's hosted on `tgcloud.ai`, and with `fetch('/api/<name>')` otherwise (local testing).
+
+## Daily report (per group, off by default)
+
+A super admin switches it on per group in the Mini App (group → **📥 Daily**) and sets:
+
+- **URL:** what the bot calls each day. `{date}` becomes the day (`YYYY-MM-DD`, Phnom Penh) and `{group}` the group's Telegram id, e.g. `https://example.com/report?date={date}&shop={group}`. Put any API key in the URL; there are no custom headers yet.
+- **Time:** when to call it, Phnom Penh time.
+- **Post to group:** send the result to the group (on by default). Either way it's saved.
+
+The response is saved in `daily_reports` (one row per group and day; a re-run replaces it, body cut at 100 KB). JSON objects are shown as `key: value` lines, anything else as text. When it's on, the group's `/menu` gets a **📥 Daily report** button that shows the latest one. **🧪** in the Mini App tests the URL without posting, and the recent reports are listed there.
+
+**The clock:** Telegram Serverless has no timer, so the sync helper is the clock. When a config changes, the bot sends the helper its times (`POST /schedule`, kept in the helper's KV). The helper's cron runs every minute and, at each of those times, sends `/dailyrun` to the bot as its user account (a super admin). The bot deletes that message and runs every enabled group whose time has passed and that has no report yet today, so a missed minute catches up at the next one. Failures are reported in that private chat. Locally, `npm run dev` runs the same check every minute itself (`DEV_DAILY=0` turns it off).
 
 ## Roles
 
@@ -131,10 +143,16 @@ TG_API_ID=... TG_API_HASH=... npm run login
 
 If you have a GramJS session that still works, pass `TG_GRAMJS_SESSION=...` to convert it instead of logging in.
 
-Deploy, then upload the secrets:
+Create the KV namespace for the Daily report schedule once, and put the `id` it prints into `wrangler.jsonc` (`kv_namespaces`):
 
 ```bash
 npx wrangler login
+npx wrangler kv namespace create SCHEDULE
+```
+
+Deploy, then upload the secrets:
+
+```bash
 npm run deploy
 npx wrangler secret bulk .dev.vars
 ```

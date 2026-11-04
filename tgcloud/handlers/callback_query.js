@@ -22,6 +22,7 @@ import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
+import { dailyConfig, formatReport, latestReport } from '../lib/daily.js';
 import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
@@ -139,7 +140,7 @@ export default async function (query) {
       // Menus are built for whoever tapped, so only admins see the Sync row.
       case 'BACK': {
         const status = await accessStatus(group);
-        const { inline_keyboard } = menuKeyboard(manager, status);
+        const { inline_keyboard } = menuKeyboard(manager, status, (await dailyConfig(group.id)).enabled);
         // In the private panel: the group's name on top, and a way back to all groups.
         if (scopedId) {
           return show(`${await groupTitle(group)}\n${menuText(status)}`, {
@@ -148,6 +149,14 @@ export default async function (query) {
           });
         }
         return show(menuText(status), { reply_markup: { inline_keyboard } });
+      }
+      case 'DREPORT': {
+        if (!(await dailyConfig(group.id)).enabled) return show(...menu({ text: '📥 Daily report is off for this group.', reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } }));
+        const row = await latestReport(group.id);
+        return show(row ? formatReport(group, row) : '<b>📥 Daily report</b>\nមិនទាន់មានរបាយការណ៍ទេ។', {
+          parse_mode: 'HTML',
+          reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] },
+        });
       }
       case 'DAILY':   return show(...menu(dailyMenu(now)));
       case 'WEEKLY':  return show(...menu(weeklyMenu(now)));

@@ -21,10 +21,12 @@ const SUBSCRIBE_ROW_DAYS = 10;
  * row. The subscription row is hidden for lifetime groups and while more than
  * SUBSCRIBE_ROW_DAYS days remain.
  */
-export const menuKeyboard = (admin = false, status = null) => keyboard([
+export const menuKeyboard = (admin = false, status = null, dailyReport = false) => keyboard([
   [btn('ប្រចាំថ្ងៃ', 'DAILY')],
   [btn('ប្រចាំសប្ដាហ៍', 'WEEKLY')],
   [btn('ប្រចាំខែ', 'MONTHLY')],
+  // Only groups a super admin switched Daily report on for (lib/daily.js).
+  dailyReport ? [btn('📥 Daily report', 'DREPORT')] : [],
   !status || (status.kind !== 'lifetime' && status.daysLeft <= SUBSCRIBE_ROW_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
   admin ? [btn('⚙️ Sync', 'SYNC_MENU')] : [],
   [btn('បិទ', 'CLOSE')],

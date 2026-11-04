@@ -95,3 +95,5 @@ button.card { cursor: pointer; }
 .icon.wide { width: 100%; padding: 10px; }
 .tabs button { padding: 10px 4px; font-size: 13px; }
 .segmented button { white-space: nowrap; }
+.plain { width: 100%; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
+pre.body { margin: 6px 0 0; padding: 8px; border-radius: 8px; background: var(--bg2); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 240px; overflow: auto; }

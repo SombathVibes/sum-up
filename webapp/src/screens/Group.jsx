@@ -6,6 +6,7 @@ import { call } from '../api.js';
 import BarChart from '../components/BarChart.jsx';
 import { accessBadge, addDays, amount, change, dateOf, monthBounds, timeOf, todayKey } from '../format.js';
 import { BillingPanel } from './Billing.jsx';
+import DailyPanel from './Daily.jsx';
 
 const tg = window.Telegram?.WebApp;
 
@@ -52,9 +53,12 @@ export default function Group({ group, startView, onClose, onChanged }) {
       <div className="segmented">
         <button className={view === 'report' ? 'on' : ''} onClick={() => setView('report')}>📊 របាយការណ៍</button>
         <button className={view === 'billing' ? 'on' : ''} onClick={() => setView('billing')}>⭐ ការជាវ</button>
+        {group.role === 'super' && <button className={view === 'daily' ? 'on' : ''} onClick={() => setView('daily')}>📥 Daily</button>}
       </div>
 
-      {view === 'billing' ? <BillingPanel group={group} onChanged={onChanged} /> : (
+      {view === 'daily' && <DailyPanel group={group} />}
+      {view === 'billing' && <BillingPanel group={group} onChanged={onChanged} />}
+      {view === 'report' && (
         <main className="content">
           <div className="chips">
             {presets().map(([label, r]) => (

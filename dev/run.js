@@ -67,6 +67,17 @@ if (hook.url) {
 const me = await callApi('getMe');
 console.log(`▶ @${me.username} running locally (${Object.keys(handlers).join(', ')}), db: ${dbFile}`);
 
+// Daily report: on the platform the sync helper's cron sends /dailyrun; here a
+// timer runs the same check every minute (DEV_DAILY=0 turns it off).
+if (process.env.DEV_DAILY !== '0') {
+  const { runDue } = await import(new URL('lib/daily.js', root).href);
+  setInterval(() => {
+    runDue()
+      .then((ran) => ran.forEach(({ group, row }) => console.log(`${row.ok ? '✓' : '✗'} daily report ${group.name ?? group.tgId}: ${row.ok ? `HTTP ${row.httpStatus}` : row.error}`)))
+      .catch((e) => console.error('✗ daily report', e));
+  }, 60_000);
+}
+
 let offset = 0;
 for (;;) {
   let updates;

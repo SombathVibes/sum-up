@@ -2,7 +2,13 @@
 // see other bots' messages) and returns the payment bots' messages to the
 // Telegram Serverless bot, which calls POST /history.
 //
+// It is also the Daily report's clock: Telegram Serverless has no timer, so the
+// bot sends the minutes it needs (POST /schedule, kept in KV) and a cron trigger
+// that runs every minute sends /dailyrun to the bot, as this user account, at
+// each of them.
+//
 // Secrets (wrangler secret put …): TG_API_ID, TG_API_HASH, TG_SESSION, SYNC_SECRET.
+// KV binding: SCHEDULE.
 
 import { MemoryStorage, TelegramClient, WebCryptoProvider } from '@mtcute/web';
 // Bundled by wrangler as a WebAssembly.Module; by default mtcute would fetch() it by URL.
@@ -61,6 +67,26 @@ async function history(tg, { chatId, minId = 0, since = 0, until, senders }) {
   return { messages, maxId };
 }
 
+const OFFSET = 7 * 3600; // the bot's times are Phnom Penh (UTC+7)
+
+function phnomPenhHHMM(ms) {
+  const d = new Date(ms + OFFSET * 1000);
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+/** Cron, every minute: wake the bot when this minute is one of its Daily report times. */
+async function tick(env, scheduledTime) {
+  const schedule = await env.SCHEDULE.get('daily', 'json');
+  if (!schedule?.bot || !schedule.times?.includes(phnomPenhHHMM(scheduledTime))) return;
+  let tg;
+  try {
+    tg = await openClient(env);
+    await tg.sendText(`@${schedule.bot}`, '/dailyrun');
+  } finally {
+    await tg?.destroy().catch(() => {});
+  }
+}
+
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
 
@@ -68,7 +94,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
     if (url.pathname === '/health') return json({ ok: true });
-    if (request.method !== 'POST' || url.pathname !== '/history') return json({ error: 'not found' }, 404);
+    if (request.method !== 'POST' || !['/history', '/schedule'].includes(url.pathname)) return json({ error: 'not found' }, 404);
     if (request.headers.get('Authorization') !== `Bearer ${env.SYNC_SECRET}`) {
       return json({ error: 'unauthorized' }, 401);
     }
@@ -78,6 +104,14 @@ export default {
       body = await request.json();
     } catch {
       return json({ error: 'invalid JSON' }, 400);
+    }
+
+    // Body: { times: ['HH:MM', …] (Phnom Penh), bot: '<username>' }
+    if (url.pathname === '/schedule') {
+      const times = Array.isArray(body.times) ? body.times.filter((t) => /^([01]\d|2[0-3]):[0-5]\d$/.test(t)) : null;
+      if (!times || !/^\w{5,32}$/.test(body.bot ?? '')) return json({ error: 'times and bot are required' }, 400);
+      await env.SCHEDULE.put('daily', JSON.stringify({ times, bot: body.bot }));
+      return json({ ok: true, times });
     }
     if (!Number.isSafeInteger(body.chatId) || !Array.isArray(body.senders)) {
       return json({ error: 'chatId and senders are required' }, 400);
@@ -93,5 +127,9 @@ export default {
     } finally {
       await tg?.destroy().catch(() => {});
     }
+  },
+
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(tick(env, controller.scheduledTime));
   },
 };

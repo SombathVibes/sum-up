@@ -3,6 +3,10 @@
   "name": "sumup-sync",
   "main": "src/index.js",
   "compatibility_date": "2026-10-01",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  // Daily report clock: every minute, checks the schedule the bot sent (POST /schedule).
+  "triggers": { "crons": ["* * * * *"] },
+  // Create once with: npx wrangler kv namespace create SCHEDULE, then put its id here.
+  "kv_namespaces": [{ "binding": "SCHEDULE", "id": "REPLACE_WITH_KV_ID" }]
   // Secrets: TG_API_ID, TG_API_HASH, TG_SESSION, SYNC_SECRET (npx wrangler secret put <NAME>)
 }

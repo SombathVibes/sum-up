@@ -7,6 +7,7 @@ import { api } from 'sdk';
 import { addPrompt, adminPanel, teamMemberScreen } from '../lib/admin.js';
 import { accessStatus, recordPayment, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
+import { dailyConfig, pushSchedule, runDue } from '../lib/daily.js';
 import { parseAmount } from '../lib/parse.js';
 import { getGroup, hasActiveSubscription, saveMessages, setSetting } from '../lib/store.js';
 import { addAdmin, canManage, isSuper, roleIn } from '../lib/roles.js';
@@ -50,6 +51,23 @@ export default async function (message) {
         await api.sendMessage({ chat_id: chatId, text: 'Say hello to me' });
         break;
 
+      case 'dailyrun': {
+        // Sent by the sync helper's cron as its user account (a super admin), or typed by one.
+        if (inGroup || !(await isSuper(message.from))) break;
+        await api.deleteMessage({ chat_id: chatId, message_id: message.message_id }).catch(() => {});
+        const ran = await runDue();
+        await pushSchedule();
+        // Quiet when everything worked; failures are worth a message.
+        const failed = ran.filter((r) => !r.row.ok);
+        if (failed.length) {
+          await api.sendMessage({
+            chat_id: chatId,
+            text: `⚠️ Daily report: ${failed.length}/${ran.length} failed\n${failed.map((r) => `• ${r.group.name ?? r.group.tgId}: ${r.row.error}`).join('\n')}`,
+          });
+        }
+        break;
+      }
+
       case 'terms':
         await api.sendMessage({ chat_id: chatId, text: TERMS_TEXT });
         break;
@@ -81,7 +99,8 @@ export default async function (message) {
           break;
         }
         const status = await accessStatus(group);
-        await api.sendMessage({ chat_id: chatId, text: menuText(status), reply_markup: menuKeyboard(canManage(role), status) });
+        const daily = (await dailyConfig(group.id)).enabled;
+        await api.sendMessage({ chat_id: chatId, text: menuText(status), reply_markup: menuKeyboard(canManage(role), status, daily) });
         break;
       }
 
