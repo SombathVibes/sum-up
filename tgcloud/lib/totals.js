@@ -124,7 +124,7 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
   const s = cur.send;
   const doc = new Doc()
     .title(`💰 របាយការណ៍សរុប · ${p.label}`)
-    .line(`${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)} · ${escape(subjectLabel(who))}`)
+    .line(escape(subjectLabel(who)))
     .line('');
   if (!r.commissionKhr && !r.winLoseAmountKhr && !s.commissionKhr) {
     doc.line('មិនទាន់មានការចាក់ទេ។');

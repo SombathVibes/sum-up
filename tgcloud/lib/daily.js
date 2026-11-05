@@ -128,10 +128,11 @@ export async function groupSubject(cfg) {
   return { key: cfg.memberCode, kind: 'member', code: cfg.memberCode, level: 'member', name: cfg.memberName || cfg.memberCode, nick: '', agentCode: cfg.agentCode };
 }
 
-/** '👥 ទាំងអស់ (login)' / '🧑‍💼 agent · nick' / '👤 member · nick'. */
+/** '👥 ទាំងអស់ (login)' / '🧑‍💼 agent' / '👤 member' (usernames). */
 export function subjectLabel(subject) {
   if (subject.kind === 'all') return `👥 ទាំងអស់${subject.name ? ` (${subject.name})` : ''}`;
-  return `${subject.kind === 'agent' ? '🧑‍💼' : '👤'} ${subject.name}${subject.nick ? ` · ${subject.nick}` : ''}`;
+  // The username only, as on the Excel buttons (no nickname).
+  return `${subject.kind === 'agent' ? '🧑‍💼' : '👤'} ${subject.name}`;
 }
 
 /** A subject key in button data: the code, or 'a' for everyone. */
@@ -461,7 +462,7 @@ export function formatReport(group, row, prev = null, who = null) {
   const [y, m, d] = row.day.split('-');
   const doc = new Doc()
     .title(`📋 របាយការណ៍ប្រចាំថ្ងៃ · ${d}/${m}/${y}`)
-    .line(`${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)}${who ? ` · ${escape(subjectLabel(who))}` : ''}`)
+    .line(who ? escape(subjectLabel(who)) : `${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)}`)
     .line('');
   const foot = () => {
     if (row.ranAt) doc.line('').line(`<i>🕘 ទាញយក ${time(row.ranAt, formatTime(row.ranAt), 'r')}</i>`);
