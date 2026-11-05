@@ -138,18 +138,20 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
       const pct = Math.round(((r.winLoseAmountKhr - before) / Math.abs(before)) * 100);
       lines.push(`${p.prevLabel} (៛${riel(before)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
     }
-    if (s.commissionKhr || s.winLoseAmountKhr) {
-      lines.push('', `<b>📤 សាង · ${profit(s.winLoseAmountKhr)}</b>`, `ចាក់ ៛${riel(s.commissionKhr)} · សង ៛${riel(s.rewardAmountKhr)}`);
-    }
-    // A week or month: the days, folded.
-    if (p.kind !== 'day') {
-      // Day of the month, bet, payout (សង) and win/lose, like the by-draw report's table.
+    // A week or month: the days in a folded table (day of the month, bet,
+    // payout and win/lose, like the by-draw report's), one for each side.
+    const table = (field, t) => {
+      if (p.kind === 'day') return [];
       const line = (a, b, c, d) => `${String(a).padEnd(6)}${String(b).padStart(10)}${String(c).padStart(10)}${String(d).padStart(10)}`;
       const rule = '─'.repeat(36);
-      const rows = cur.perDay.filter((d) => d.report || d.send).map((d) => line(d.day.slice(8, 10), riel(d.report?.commissionKhr), riel(d.report?.rewardAmountKhr), riel(d.report?.winLoseAmountKhr)));
-      if (rows.length) {
-        lines.push('', `<blockquote expandable><pre>${escape([line('Day', 'Bet', 'Reward', 'W/L'), rule, ...rows, rule, line('Total', riel(r.commissionKhr), riel(r.rewardAmountKhr), riel(r.winLoseAmountKhr))].join('\n'))}</pre></blockquote>`);
-      }
+      const rows = cur.perDay.filter((d) => d[field]).map((d) => line(d.day.slice(8, 10), riel(d[field].commissionKhr), riel(d[field].rewardAmountKhr), riel(d[field].winLoseAmountKhr)));
+      if (!rows.length) return [];
+      return ['', `<blockquote expandable><pre>${escape([line('Day', 'Bet', 'Reward', 'W/L'), rule, ...rows, rule, line('Total', riel(t.commissionKhr), riel(t.rewardAmountKhr), riel(t.winLoseAmountKhr))].join('\n'))}</pre></blockquote>`];
+    };
+    lines.push(...table('report', r));
+    // 📤 សាង below, with its own table.
+    if (s.commissionKhr || s.winLoseAmountKhr) {
+      lines.push('', '━━━━━━━━━━━━', `<b>📤 សាង · ${profit(s.winLoseAmountKhr)}</b>`, `ចាក់ ៛${riel(s.commissionKhr)} · សង ៛${riel(s.rewardAmountKhr)}`, ...table('send', s));
     }
   }
   if (cur.missing) lines.push('', `⏳ ទាញបាន ${p.days.length - cur.missing}/${p.days.length} ថ្ងៃ — ចុច «🔄 ទាញថ្មី» ដើម្បីបន្ត។${cur.error ? `\n⚠️ ${escape(cur.error.slice(0, 160))}` : ''}`);
