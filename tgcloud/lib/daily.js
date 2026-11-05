@@ -402,9 +402,9 @@ const profit = (wl) => (wl < 0 ? `📉 ខាត ៛${riel(-wl)}` : `📈 ចំ
 
 /**
  * The lottery daily report (data.items[].upperLineSale with a summary and one
- * item per draw): the day's result on top (profit or loss, the user/company
- * split, bet and payout, and the change from the day before when `prevWl` is
- * known), then per lottery its result and, folded in an expandable quote, a
+ * item per draw): the day's result on top (profit or loss, bet and payout,
+ * the user/company split, and the change from the day before when `prevWl`
+ * is known), then per lottery its result and, folded in an expandable quote, a
  * table of draws by Phnom Penh time; then the same for `data2` (the second
  * URL's reply) as 📤 សាង. Returns HTML, or null when the reply isn't that shape.
  */
@@ -426,10 +426,10 @@ function formatLottery(data, prevWl = null, data2 = null) {
 
   const total = lotteryTotals(lotteries);
   const share = lotteries[0].summary;
-  doc.bold(profit(total.wl))
-    .line(`👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`)
-    .line(`ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`);
+  doc.bold(profit(total.wl)).line(`ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`);
   if (total.usd) doc.line(`💵 USD: $${total.usd.toFixed(2)}`);
+  // The user/company split, just above the comparison with the day before.
+  doc.line(`👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`);
   if (prevWl) {
     const pct = Math.round(((total.wl - prevWl) / Math.abs(prevWl)) * 100);
     doc.line(`ធៀបម្សិលមិញ (៛${riel(prevWl)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
