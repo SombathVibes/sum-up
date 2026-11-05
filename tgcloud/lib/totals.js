@@ -133,7 +133,8 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
     // share, send/total-report), or the normal one when there's no 📤.
     const hasSend = !!(s.commissionKhr || s.winLoseAmountKhr);
     resultHead(doc, r.winLoseAmountKhr, hasSend ? s.winLoseAmountKhr : null);
-    doc.gap().line(`🎫 ចាក់ ៛${riel(r.commissionKhr)} · 💸 សង ៛${riel(r.rewardAmountKhr)}`);
+    // Between dividers: bet and payout, and the comparison with the period before.
+    doc.rule().line(`🎫 ចាក់ ៛${riel(r.commissionKhr)} · 💸 សង ៛${riel(r.rewardAmountKhr)}`);
     if (r.winLoseAmountUsd) doc.line(`💵 USD: $${Number(r.winLoseAmountUsd).toFixed(2)}`);
     // Final against final: win/lose less 📤's win/lose (already the user's share).
     const before = prev && !prev.missing ? prev.report.winLoseAmountKhr - prev.send.winLoseAmountKhr : null;
@@ -141,6 +142,8 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
       const pct = Math.round(((r.winLoseAmountKhr - s.winLoseAmountKhr - before) / Math.abs(before)) * 100);
       doc.line(`${p.prevLabel} (៛${riel(before)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
     }
+    // The closing divider before the day table (a day has none; 📤 brings its own).
+    if (p.kind !== 'day') doc.rule();
     // A week or month: the days in a table (day of the month, bet, payout and
     // win/lose), one for each side.
     const table = (field, t) => {

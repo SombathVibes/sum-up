@@ -442,8 +442,8 @@ function formatLottery(data, prevWl = null, data2 = null) {
   // On top: the final result (normal less 📤's user share, winLoseAmountKhrUser), or the normal one.
   resultHead(doc, total.wl, t2 && t2.user, second?.[0]?.summary.userSendShare ?? '');
   if (total.usd) doc.line(`💵 USD: $${total.usd.toFixed(2)}`);
-  // After a blank line: bet and payout, the user/company split, and the comparison with the day before.
-  doc.gap().line(`🎫 ចាក់ ៛${riel(total.bet)} · 💸 សង ៛${riel(total.reward)}`);
+  // Between two dividers: bet and payout, the user/company split, and the comparison with the day before.
+  doc.rule().line(`🎫 ចាក់ ៛${riel(total.bet)} · 💸 សង ៛${riel(total.reward)}`);
   doc.line(`👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`);
   if (prevWl) {
     // Final against final (both less 📤's user share; snapshotWinLose).
@@ -451,6 +451,7 @@ function formatLottery(data, prevWl = null, data2 = null) {
     const pct = Math.round(((final - prevWl) / Math.abs(prevWl)) * 100);
     doc.line(`ធៀបម្សិលមិញ (៛${riel(prevWl)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
   }
+  doc.rule();
   lotterySections(doc, lotteries);
 
   // 📤 សាង's own result and lotteries, below the main ones.
