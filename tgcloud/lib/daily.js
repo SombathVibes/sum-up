@@ -461,7 +461,7 @@ function lotterySections(lotteries) {
  */
 export function formatReport(group, row, prev = null, who = null) {
   const [y, m, d] = row.day.split('-');
-  const head = `<b>📥 ${REPORT_NAME} · ${d}/${m}/${y}</b>\n🏪 ${escape(group.name ?? group.tgId)}${who ? ` · ${escape(subjectLabel(who))}` : ''}`;
+  const head = `<b>📥 ${REPORT_NAME} · ${d}/${m}/${y}</b>\n${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)}${who ? ` · ${escape(subjectLabel(who))}` : ''}`;
   const foot = row.ranAt ? `\n\n<i>🕘 ទាញយកម៉ោង ${formatTime(row.ranAt)}</i>` : '';
   if (!row.ok) return `${head}\n\n⚠️ ${escape(row.error ?? 'Failed')}${foot}`;
   let data;

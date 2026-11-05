@@ -83,6 +83,8 @@ export async function adminPanel(user, page = 0) {
   const keyboard = items.map((r) => [groupButton(r)]);
   keyboard.push(...pagerRow(p, pages, (n) => `ADMIN_P_${n}`));
   if (urgent.length) keyboard.push([btn(`⚠️ ផុតកំណត់ (${urgent.length})`, 'ADMIN_URG_0')]);
+  // 📥 the lottery report for anyone under a login, not tied to a group.
+  if (superAdmin) keyboard.push([btn('📥 របាយការណ៍ឆ្នោត', 'LOTTO')]);
   if (superAdmin) keyboard.push([btn('👥 អ្នកគ្រប់គ្រង', 'TEAM')]);
   // The admin Mini App (webapp/), once its address is in config.
   if (MINIAPP_URL) keyboard.push([{ text: '🖥 Admin app', web_app: { url: MINIAPP_URL } }]);

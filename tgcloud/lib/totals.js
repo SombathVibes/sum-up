@@ -121,7 +121,7 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
   const s = cur.send;
   const lines = [
     `<b>💰 សរុប · ${p.label}</b>`,
-    `🏪 ${escape(group.name ?? group.tgId)} · ${escape(subjectLabel(who))}`,
+    `${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)} · ${escape(subjectLabel(who))}`,
     '',
   ];
   if (!r.commissionKhr && !r.winLoseAmountKhr && !s.commissionKhr) {

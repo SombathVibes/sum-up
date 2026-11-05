@@ -23,7 +23,7 @@ import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject } from '../lib/daily.js';
-import { getLogin } from '../lib/logins.js';
+import { getLogin, listLogins } from '../lib/logins.js';
 import { agentListScreen, getAgent, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
 import { totalsPicker, totalsScreen } from '../lib/totals.js';
 import { paymentSettings } from '../lib/settings.js';
@@ -48,17 +48,24 @@ export default async function (query) {
   // '@<group id>:<data>' (GROUP_<id> from the panel opens that group's menu).
   // Whether this user may act on it is checked below (roleIn).
   let scopedId = null;
+  // The panel's own 📥 lottery report (super admins): 'L<login id>:<data>'.
+  let loginScope = null;
   if (isPrivate) {
     const opened = /^GROUP_(-?\d+)$/.exec(data);
     if (opened) data = `@${opened[1]}:BACK`;
     const scoped = /^@(-?\d+):(.*)$/.exec(data);
     if (scoped) [scopedId, data] = [Number(scoped[1]), scoped[2]];
+    const byLogin = /^L(\d+):(.*)$/.exec(data);
+    if (byLogin) [loginScope, data] = [Number(byLogin[1]), byLogin[2]];
   }
   // Every button sent back from a scoped screen keeps the scope.
-  const scope = (markup) => (!scopedId || !markup ? markup : {
-    inline_keyboard: markup.inline_keyboard.map((row) =>
-      row.map((b) => (b.callback_data ? { ...b, callback_data: `@${scopedId}:${b.callback_data}` } : b))),
-  });
+  const scope = (markup) => {
+    const prefix = scopedId ? `@${scopedId}:` : loginScope ? `L${loginScope}:` : '';
+    return !prefix || !markup ? markup : {
+      inline_keyboard: markup.inline_keyboard.map((row) =>
+        row.map((b) => (b.callback_data ? { ...b, callback_data: `${prefix}${b.callback_data}` } : b))),
+    };
+  };
 
   // A photo message (the QR screen) can't become text, so it's replaced instead of edited.
   const replace = async (screen) => {
@@ -69,6 +76,56 @@ export default async function (query) {
     ? replace({ text, ...extra })
     : edit(chatId, messageId, text, { ...extra, reply_markup: scope(extra.reply_markup) }));
   const showScreen = (screen) => (screen.photo ? replace(screen) : show(screen.text, { parse_mode: screen.parse_mode, reply_markup: screen.reply_markup }));
+
+  /**
+   * 📥 lottery report screens (lib/daily.js) and 💰 its totals (lib/totals.js)
+   * for `cfg` ({ loginId, memberCode }) and `login` (with secret): `mine` is
+   * whose they show by default; `canSwitch` (only the panel's own 📥, super
+   * admins) lets a trailing _<who> (user code, or 'a' for everyone) pick
+   * someone else under the login.
+   *   DREPORT / DRWK_<page>[_<who>] pick a day, DREP_<day>[_<who>] shows it,
+   *   DREP!_… fetches it again; TOT[_<who>] picks a period, TOT_D_ / TOT_W_ /
+   *   TOT_M_…[_<who>] show it; DRWHO[_<day>] / TOTWHO pick whose, WHOSYNC
+   *   refreshes the list of agents and members.
+   */
+  const lottery = async (key, { cfg, login, group, mine, canSwitch, refresh }) => {
+    // Anyone else only for super admins in the private panel.
+    const whoOf = async (tok) => (canSwitch && tokenSubject(tok) !== undefined ? subjectOf(cfg.loginId, tokenSubject(tok)) : mine);
+    if (/^(DRWHO|TOTWHO|WHOSYNC)/.test(key)) {
+      if (!canSwitch) return showScreen(await dayPicker(cfg, mine));
+      let note = '';
+      if (key === 'WHOSYNC' || !(await savedAgents(cfg.loginId)).length) {
+        try {
+          await syncAgents(login);
+          if (key === 'WHOSYNC') note = '\n✅ បានទាញបញ្ជីថ្មី';
+        } catch (e) {
+          note = `\n⚠️ ${String(e.message ?? e).slice(0, 200)}`;
+        }
+      }
+      if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 សរុប', target: (t) => `TOT_${t}`, back: 'TOT', note }));
+      const day = /^DRWHO_(\d{4}-\d\d-\d\d)$/.exec(key)?.[1];
+      return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRWK_0_${t}`), back: day ? `DREP_${day}` : 'DREPORT', note }));
+    }
+    if (key === 'TOT' || key.startsWith('TOT_')) {
+      const pick = /^TOT(?:_(a|\d{1,20}))?$/.exec(key);
+      if (pick) return showScreen(totalsPicker(await whoOf(pick[1]), { canSwitch }));
+      const who = await whoOf(/_(a|\d{1,20})$/.exec(key)?.[1]);
+      await show('⏳ កំពុងគណនា…');
+      try {
+        return showScreen(await totalsScreen(group, login, who, key, { refresh, canSwitch }));
+      } catch (e) {
+        console.error('totals failed', e);
+        return show(`⚠️ ${String(e.message ?? e).slice(0, 300)}`, { reply_markup: { inline_keyboard: [[{ text: '🔄 ម្ដងទៀត', callback_data: key }], [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'TOT' }]] } });
+      }
+    }
+    if (key === 'DREPORT' || key.startsWith('DRWK_')) {
+      const [, page, tok] = /^DRWK_(\d+)(?:_(a|\d{1,20}))?$/.exec(key) ?? [];
+      return showScreen(await dayPicker(cfg, await whoOf(tok), Number(page) || 0, { canSwitch }));
+    }
+    const [, bang, day, tok] = /^DREP(!?)_(\d{4}-\d\d-\d\d)(?:_(a|\d{1,20}))?$/.exec(key) ?? [];
+    if (!day) return showScreen(await dayPicker(cfg, mine, 0, { canSwitch }));
+    return showScreen(await dayReportScreen(group, cfg, await whoOf(tok), day, { refresh: !!bang, canSwitch }));
+  };
 
   try {
     if (data === 'CLOSE') {
@@ -97,6 +154,33 @@ export default async function (query) {
         await answer({ callback_query_id: query.id });
         scopedId = null;
         return showScreen(panel);
+      }
+      // The panel's own 📥 lottery report (super admins), not tied to a group:
+      // LOTTO picks a login when there are more than one, then L<id>:… shows
+      // its screens, with 🔀 for everyone under it, each agent and member.
+      if (data === 'LOTTO' || loginScope) {
+        if (!superAdmin) return refuse('You are not admin 😡');
+        const refresh = data.endsWith('!');
+        await answer({ callback_query_id: query.id, text: refresh ? '🔄' : undefined });
+        if (data === 'LOTTO') {
+          const logins = (await listLogins()).filter((l) => l.baseUrl);
+          if (logins.length !== 1) {
+            return show(logins.length ? '📥 <b>របាយការណ៍ឆ្នោត</b>\nជ្រើសរើស Login:' : '📥 មិនទាន់មាន Login ឆ្នោតទេ — បន្ថែមនៅ Mini App ⚙️។', {
+              parse_mode: 'HTML',
+              reply_markup: { inline_keyboard: [...logins.map((l) => [{ text: `🔑 ${l.username}`, callback_data: `L${l.id}:DRWHO` }]), [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'ADMIN_HOME' }]] },
+            });
+          }
+          [loginScope, data] = [logins[0].id, 'DRWHO'];
+        }
+        const key = refresh ? data.slice(0, -1) : data;
+        const login = await getLogin(loginScope, { secret: true });
+        if (!login || key === 'BACK' || !LOTTERY_KEY.test(key)) {
+          loginScope = null;
+          return showScreen(await adminPanel(query.from));
+        }
+        const cfg = { loginId: login.id, memberCode: '' };
+        const group = { name: login.username, tgId: 0, icon: '🔑' };
+        return lottery(key, { cfg, login, group, mine: await subjectOf(login.id, ''), canSwitch: true, refresh });
       }
       if (!scopedId) return refuse('Use this in a group.');
     }
@@ -148,58 +232,16 @@ export default async function (query) {
       const paid = await totalsByDay(group.id, { start: dayRange(addDays(first, -6)).start, end: dayRange(first).end });
       return bankDayPicker(now, page, new Set(paid.map((r) => r.day)));
     };
-    // 📥 lottery report (lib/daily.js) and 💰 its totals (lib/totals.js). In a
-    // group: only the group's member. Super admins in the private panel may
-    // switch (🔀) to everyone under the login, an agent or another member, as
-    // a trailing _<who> (user code, or 'a' for everyone).
-    //   DREPORT / DRWK_<page>[_<who>] pick a day, DREP_<day>[_<who>] shows it,
-    //   DREP!_… fetches it again; TOT[_<who>] picks a period, TOT_D_ / TOT_W_ /
-    //   TOT_M_…[_<who>] show it; DRWHO[_<day>] / TOTWHO pick whose, WHOSYNC
-    //   refreshes the list of agents and members.
-    if (/^(DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/.test(key)) {
+    // 📥 lottery report in a group (and that group in the panel): its member
+    // only. Switching to anyone else is the panel's own 📥 (LOTTO, above).
+    if (LOTTERY_KEY.test(key)) {
       const cfg = await dailyConfig(group.id);
       const login = cfg.enabled && cfg.memberCode ? await getLogin(cfg.loginId, { secret: true }) : null;
       if (!login) {
         return show('📥 មុខងារនេះមិនទាន់បើកសម្រាប់ក្រុមនេះទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
       }
-      const canSwitch = !!scopedId && superAdmin;
-      const mine = await groupSubject(cfg);
-      // Anyone else only for super admins in the private panel.
-      const whoOf = async (tok) => (canSwitch && tokenSubject(tok) !== undefined ? subjectOf(cfg.loginId, tokenSubject(tok)) : mine);
-      if (/^(DRWHO|TOTWHO|WHOSYNC)/.test(key)) {
-        if (!canSwitch) return showScreen(await dayPicker(cfg, mine));
-        let note = '';
-        if (key === 'WHOSYNC' || !(await savedAgents(cfg.loginId)).length) {
-          try {
-            await syncAgents(login);
-            if (key === 'WHOSYNC') note = '\n✅ បានទាញបញ្ជីថ្មី';
-          } catch (e) {
-            note = `\n⚠️ ${String(e.message ?? e).slice(0, 200)}`;
-          }
-        }
-        if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 សរុប', target: (t) => `TOT_${t}`, back: 'TOT', note }));
-        const day = /^DRWHO_(\d{4}-\d\d-\d\d)$/.exec(key)?.[1];
-        return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRWK_0_${t}`), back: day ? `DREP_${day}` : 'DREPORT', note }));
-      }
-      if (key === 'TOT' || key.startsWith('TOT_')) {
-        const pick = /^TOT(?:_(a|\d{1,20}))?$/.exec(key);
-        if (pick) return showScreen(totalsPicker(await whoOf(pick[1]), { canSwitch }));
-        const who = await whoOf(/_(a|\d{1,20})$/.exec(key)?.[1]);
-        await show('⏳ កំពុងគណនា…');
-        try {
-          return showScreen(await totalsScreen(group, login, who, key, { refresh, canSwitch }));
-        } catch (e) {
-          console.error('totals failed', e);
-          return show(`⚠️ ${String(e.message ?? e).slice(0, 300)}`, { reply_markup: { inline_keyboard: [[{ text: '🔄 ម្ដងទៀត', callback_data: key }], [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'TOT' }]] } });
-        }
-      }
-      if (key === 'DREPORT' || key.startsWith('DRWK_')) {
-        const [, page, tok] = /^DRWK_(\d+)(?:_(a|\d{1,20}))?$/.exec(key) ?? [];
-        return showScreen(await dayPicker(cfg, await whoOf(tok), Number(page) || 0, { canSwitch }));
-      }
-      const [, bang, day, tok] = /^DREP(!?)_(\d{4}-\d\d-\d\d)(?:_(a|\d{1,20}))?$/.exec(key) ?? [];
-      if (!day) return showScreen(await dayPicker(cfg, mine, 0, { canSwitch }));
-      return showScreen(await dayReportScreen(group, cfg, await whoOf(tok), day, { refresh: !!bang, canSwitch }));
+      // In a group (here or in the panel), only the group's member.
+      return lottery(key, { cfg, login, group, mine: await groupSubject(cfg), canSwitch: false, refresh });
     }
 
     // 📊 Agent Excel (private admin panel only, checked above): XL lists the agents
@@ -311,6 +353,9 @@ export default async function (query) {
 }
 
 const menu = ({ text, reply_markup }) => [text, { reply_markup }];
+
+/** Buttons of the 📥 lottery report and its 💰 totals (see `lottery` in the handler). */
+const LOTTERY_KEY = /^(DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/;
 
 /** A failed catch-up still lets the report show what is stored. */
 async function catchUp(group) {
