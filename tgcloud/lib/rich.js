@@ -28,6 +28,13 @@ export class Doc {
     return this;
   }
 
+  /** A blank line in both forms (line('') is one in the text form only). */
+  gap() {
+    this.text.push('');
+    this.rich.push('<p><br></p>');
+    return this;
+  }
+
   /** The screen's title. */
   title(html) {
     this.text.push(`<b>${html}</b>`);
@@ -51,8 +58,9 @@ export class Doc {
 
   /**
    * A table: `cols` from col(), `rows` and `total` (optional) as arrays of
-   * plain strings. `fold`: folded (expandable quote / <details> with that
-   * summary) rather than shown open.
+   * plain strings; the total row is headed សរុប in the rich form ('Total' in
+   * the monospace one). `fold`: folded (expandable quote / <details> with
+   * that summary) rather than shown open.
    */
   table(cols, rows, { total = null, fold = null } = {}) {
     if (!rows.length) return this;
@@ -68,7 +76,7 @@ export class Doc {
       return `<${tag}${align}>${bold ? `<b>${escape(v)}</b>` : escape(v)}</${tag}>`;
     };
     const tr = (cells, tag = 'td', bold = false) => `<tr>${cells.map((v, i) => cell(tag, v, i, bold)).join('')}</tr>`;
-    const table = `<table bordered striped compact>${tr(cols.map((c) => c.kh), 'th')}${rows.map((r) => tr(r)).join('')}${total ? tr(total, 'td', true) : ''}</table>`;
+    const table = `<table bordered striped compact>${tr(cols.map((c) => c.kh), 'th')}${rows.map((r) => tr(r)).join('')}${total ? tr(['សរុប', ...total.slice(1)], 'td', true) : ''}</table>`;
     this.rich.push(fold ? `<details><summary>${fold}</summary>${table}</details>` : table);
     return this;
   }
