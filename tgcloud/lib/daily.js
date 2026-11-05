@@ -279,9 +279,8 @@ export const REPORT_NAME = 'របាយការណ៍ឆ្នោត';
 const riel = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
 
 /**
- * Phnom Penh '08:30 AM' from drawAtPP ('2026-11-04 08:30:00') or drawAt (UTC
- * ISO). The space is a no-break space, so a narrow table cell (rich reports
- * on a phone) never splits the time from its AM/PM.
+ * Phnom Penh 24-hour '16:30' from drawAtPP ('2026-11-04 16:30:00') or drawAt
+ * (UTC ISO): short, so a phone's table keeps room for amounts in millions.
  */
 function drawTime(item) {
   let h;
@@ -294,7 +293,7 @@ function drawTime(item) {
     const d = new Date(t + OFFSET * 1000);
     [h, m] = [d.getUTCHours(), pad2(d.getUTCMinutes())];
   }
-  return `${pad2(h % 12 || 12)}:${m} ${h >= 12 ? 'PM' : 'AM'}`;
+  return `${pad2(h)}:${m}`;
 }
 
 const pickKeys = (o, keys) => Object.fromEntries(keys.filter((k) => o?.[k] !== undefined).map((k) => [k, o[k]]));
@@ -434,7 +433,7 @@ function formatLottery(data, prevWl = null, data2 = null) {
 }
 
 // A lottery's draws: Phnom Penh time, bet, payout, win/lose.
-const DRAW_COLS = [col('ម៉ោង', 'Time', 8), col('ចាក់', 'Bet', 9), col('សង', 'Reward', 9), col('ចំណេញ', 'W/L', 9)];
+const DRAW_COLS = [col('ម៉ោង', 'Time', 6), col('ចាក់', 'Bet', 10), col('សង', 'Reward', 10), col('ចំណេញ', 'W/L', 10)];
 
 /** Per lottery: its result, then its draws in a folded table. */
 function lotterySections(doc, lotteries) {
