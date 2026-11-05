@@ -16,24 +16,22 @@ export const MENU_TEXT = 'ជ្រើសរើសរបាយការណ៍:';
 /** The bank payments report's name. */
 export const BANK_REPORT = 'របាយការណ៍ធនាគារ';
 
-// The subscription row appears only when access ends within this many days.
-const SUBSCRIBE_ROW_DAYS = 10;
+// The group's /menu warns about the end of access (the ⚠️ line, and the
+// ⭐ ការជាវ button) only when it ends within this many days. Admins' own lists
+// (private panel, Mini App) flag groups earlier, within 10 days.
+export const WARN_DAYS = 7;
 
-/**
- * The report menu (status from billing.accessStatus). Admins also get a Sync
- * row. The subscription row is hidden for lifetime groups and while more than
- * SUBSCRIBE_ROW_DAYS days remain.
- */
 /**
  * The group menu, built for whoever opened it: admin (manager) adds ⚙️ Sync,
  * dailyReport the 📥 lottery report (switched on for the group), agentExcel
  * 📊 Excel ភ្នាក់ងារ (the private admin panel, and the group's report signs in).
+ * ⭐ ការជាវ only within WARN_DAYS of the end (and not for lifetime groups).
  */
 export const menuKeyboard = (admin = false, status = null, dailyReport = false, agentExcel = false) => keyboard([
   [btn(`📊 ${BANK_REPORT}`, 'BANK', 'primary')],
   // Only groups a super admin switched Daily report on for (lib/daily.js).
   dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DRTYPE', 'primary')] : [],
-  !status || (status.kind !== 'lifetime' && status.daysLeft <= SUBSCRIBE_ROW_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
+  !status || (status.kind !== 'lifetime' && status.daysLeft <= WARN_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
   agentExcel ? [btn('📊 Excel ភ្នាក់ងារ', 'XL')] : [],
   admin ? [btn('⚙️ Sync', 'SYNC_MENU')] : [],
   [btn('បិទ', 'CLOSE')],
@@ -41,8 +39,8 @@ export const menuKeyboard = (admin = false, status = null, dailyReport = false, 
 
 /**
  * Menu title with the group's access on top (status from billing.accessStatus),
- * e.g. '📅 សុពលភាពដល់ 03/12/2026 · នៅសល់ 29 ថ្ងៃ'; a warning in the last 3 days
- * unless it renews by itself.
+ * e.g. '📅 សុពលភាពដល់ 03/12/2026 · នៅសល់ 29 ថ្ងៃ'; a warning in the last
+ * WARN_DAYS days unless it renews by itself.
  */
 export function menuText(status) {
   if (!status) return MENU_TEXT;
@@ -52,7 +50,7 @@ export function menuText(status) {
   const left = `នៅសល់ ${status.daysLeft} ថ្ងៃ`;
   let line;
   if (status.kind === 'renewing') line = `🔁 បន្តស្វ័យប្រវត្តិ ${date}`;
-  else if (status.daysLeft <= 3) line = `⚠️ ផុតកំណត់ ${date} · ${left} — ចុច ⭐ ការជាវ`;
+  else if (status.daysLeft <= WARN_DAYS) line = `⚠️ ផុតកំណត់ ${date} · ${left} — ចុច ⭐ ការជាវ`;
   else if (status.kind === 'trial') line = `📅 សាកល្បងដល់ ${date} · ${left}`;
   else line = `📅 សុពលភាពដល់ ${date} · ${left}`;
   return `${line}\n${MENU_TEXT}`;

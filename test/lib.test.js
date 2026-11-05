@@ -59,8 +59,11 @@ assert.equal(ui.menuText({ kind: 'renewing', end, daysLeft: 2 }).split('\n')[0],
 assert.equal(ui.menuText({ kind: 'lifetime' }).split('\n')[0], '♾️ អចិន្ត្រៃយ៍');
 assert.equal(ui.menuText(null), ui.MENU_TEXT);
 const hasBilling = (status) => ui.menuKeyboard(false, status).inline_keyboard.flat().some((b) => b.callback_data === 'BILLING');
-assert.equal(hasBilling({ kind: 'paid', end, daysLeft: 11 }), false);  // more than 10 days left: hidden
-assert.equal(hasBilling({ kind: 'trial', end, daysLeft: 10 }), true);  // 10 days or less: shown
+assert.equal(hasBilling({ kind: 'paid', end, daysLeft: 8 }), false);  // more than 7 days left: hidden
+assert.equal(hasBilling({ kind: 'trial', end, daysLeft: 7 }), true);  // 7 days or less: shown
+// The ⚠️ line comes with the button: 7 days or less, not 8.
+assert.ok(ui.menuText({ kind: 'paid', end, daysLeft: 7 }).startsWith('⚠️ ផុតកំណត់ 03/12/2026 · នៅសល់ 7 ថ្ងៃ'));
+assert.ok(ui.menuText({ kind: 'paid', end, daysLeft: 8 }).startsWith('📅 សុពលភាពដល់'));
 assert.equal(hasBilling({ kind: 'lifetime' }), false);
 assert.equal(hasBilling(null), true);
 // View flags round-trip through callback data.
