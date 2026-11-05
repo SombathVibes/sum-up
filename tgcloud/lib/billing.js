@@ -76,11 +76,12 @@ export async function subscriptionScreen(chat, group) {
       '',
       esc(pay.instructions),
     );
+    // 💬 asks for the receipt in the group, which goes to the admins with one-tap renew buttons (lib/receipts.js).
     rows.push([
       { text: '📋 ចម្លងលេខគណនី', copy_text: { text: pay.accountNumber.replace(/\s/g, '') } },
-      { text: '💬 ផ្ញើវិក្កយបត្រ', url: pay.supportLink, style: 'success' },
+      { text: '💬 ផ្ញើវិក្កយបត្រ', callback_data: 'RECEIPT', style: 'success' },
     ]);
-    rows.push([{ text: '📄 /terms', callback_data: 'TERMS' }]);
+    rows.push([{ text: '📄 /terms', callback_data: 'TERMS' }, { text: '🆘 Support', url: pay.supportLink }]);
   }
   if (active) rows.push([{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]);
 

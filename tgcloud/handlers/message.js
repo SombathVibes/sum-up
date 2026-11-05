@@ -11,6 +11,7 @@ import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig } from '../lib/daily.js';
 import { listLogins, pushSchedule } from '../lib/logins.js';
 import { runDue } from '../lib/schedule.js';
+import { forwardReceipt, isReceipt } from '../lib/receipts.js';
 import { parseAmount } from '../lib/parse.js';
 import { getGroup, hasActiveSubscription, listGroups, saveMessages, setSetting } from '../lib/store.js';
 import { addAdmin, canManage, isSuper, roleIn } from '../lib/roles.js';
@@ -24,10 +25,18 @@ export default async function (message) {
   // A super admin picked someone with the 'add admin' user picker.
   if (message.users_shared) return (await isSuper(message.from)) && addSharedAdmins(message);
 
-  const command = await parseCommand(message.text ?? message.caption);
-  if (!command) return;
   const chatId = message.chat.id;
   const inGroup = message.chat.type === 'group' || message.chat.type === 'supergroup';
+  // 🧾 A transfer receipt sent as a reply to the bot's request (⭐ ការជាវ → 💬):
+  // copied to the admins with one-tap renew buttons (lib/receipts.js).
+  if (inGroup && (await isReceipt(message))) {
+    const group = await getGroup(chatId);
+    if (group) await forwardReceipt(message, group);
+    return;
+  }
+
+  const command = await parseCommand(message.text ?? message.caption);
+  if (!command) return;
 
   try {
     // The Mini App's ➕ opens t.me/<bot>?start=addadmin: the user picker, for super admins.

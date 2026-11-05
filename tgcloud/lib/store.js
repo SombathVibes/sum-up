@@ -12,6 +12,10 @@ const INSERT_CHUNK = 100;
 export const getGroup = (tgId) =>
   db.select().from(groups).where(eq(groups.tgId, tgId)).get();
 
+/** A group by its own id (groups.id), or undefined. */
+export const getGroupById = (id) =>
+  db.select().from(groups).where(eq(groups.id, id)).get();
+
 /** Every registered group (Telegram group ids are negative; private chats aren't groups). */
 export const listGroups = () =>
   db.select().from(groups).where(lt(groups.tgId, 0)).orderBy(asc(groups.name)).all();

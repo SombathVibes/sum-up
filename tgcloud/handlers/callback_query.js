@@ -29,6 +29,7 @@ import { totalsPicker, totalsScreen } from '../lib/totals.js';
 import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
+import { askForReceipt, handleReceiptButton } from '../lib/receipts.js';
 import {
   RENEW_MONTHS, bankDayPicker, bankPeriodPicker, calendarMenu, menuKeyboard, menuText, parseView, renewMenu, reportKeyboard,
   syncMenu, yearCalendarMenu,
@@ -151,6 +152,18 @@ export default async function (query) {
     }
 
     const refuse = (text) => answer({ callback_query_id: query.id, text, show_alert: true });
+
+    // 🧾 A receipt's one-tap buttons on an admin's copy (lib/receipts.js): renew or turn down.
+    if (data.startsWith('RCPT_')) {
+      const result = await handleReceiptButton(data, query.from);
+      return answer({ callback_query_id: query.id, text: result ?? undefined, show_alert: !!result && !result.startsWith('✅') && !result.startsWith('❌') });
+    }
+    // 💬 ផ្ញើវិក្កយបត្រ on ⭐ ការជាវ, in the group: ask for the receipt as a reply there.
+    if (data === 'RECEIPT') {
+      if (isPrivate) return refuse('សូមផ្ញើវិក្កយបត្រនៅក្នុងក្រុម។');
+      await answer({ callback_query_id: query.id });
+      return askForReceipt(chatId);
+    }
 
     if (isPrivate) {
       // Super admins manage the admin team here.
