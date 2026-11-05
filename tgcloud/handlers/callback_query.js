@@ -75,7 +75,7 @@ export default async function (query) {
   const show = (text, extra = {}) => (msg.photo
     ? replace({ text, ...extra })
     : edit(chatId, messageId, text, { ...extra, reply_markup: scope(extra.reply_markup) }));
-  const showScreen = (screen) => (screen.photo ? replace(screen) : show(screen.text, { parse_mode: screen.parse_mode, reply_markup: screen.reply_markup }));
+  const showScreen = (screen) => (screen.photo ? replace(screen) : show(screen.text, { parse_mode: screen.parse_mode, reply_markup: screen.reply_markup, rich: screen.rich }));
 
   /**
    * 📥 lottery report screens (lib/daily.js) and 💰 its totals (lib/totals.js)
@@ -333,7 +333,12 @@ export default async function (query) {
     if (!report) return;
 
     // In the private panel a report starts with which group it's for.
-    const titled = async (text) => (scopedId ? `${await groupTitle(group)}\n${text}` : text);
+    // In the private panel a report starts with which group it's for (both forms: lib/rich.js).
+    const titled = async ({ text, rich }) => {
+      if (!scopedId) return { text, rich };
+      const title = await groupTitle(group);
+      return { text: `${title}\n${text}`, rich: `<p>${title}</p>${rich}` };
+    };
     const render = async () => {
       if (report.day) {
         const range = dayRange(report.day);
@@ -342,10 +347,10 @@ export default async function (query) {
           yesterday: await totalsByBot(group.id, dayRange(addDays(report.day, -1))),
           lastWeek: await totalsByBot(group.id, dayRange(addDays(report.day, -7))),
         };
-        const text = view.cards
+        const screen = await titled(view.cards
           ? dayReport(report.day, rows, query.from, await recentPayments(group.id, range), compare)
-          : dayTable(report.day, rows, query.from, compare);
-        return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.prev, report.next, view, { day: true }) });
+          : dayTable(report.day, rows, query.from, compare));
+        return show(screen.text, { parse_mode: 'HTML', rich: screen.rich, reply_markup: reportKeyboard(report.key, report.prev, report.next, view, { day: true }) });
       }
       const data = {
         days: await totalsByDay(group.id, report.range, view.bank),
@@ -353,9 +358,10 @@ export default async function (query) {
         prev: await totalsByBot(group.id, report.previous),
       };
       const banks = [...new Set(data.bots.map((r) => r.botTgId))];
-      const text = rangeReport(report.range, data, query.from, { month: !!report.month, daily: view.daily, bank: view.bank });
-      return show(await titled(text), {
+      const screen = await titled(rangeReport(report.range, data, query.from, { month: !!report.month, daily: view.daily, bank: view.bank }));
+      return show(screen.text, {
         parse_mode: 'HTML',
+        rich: screen.rich,
         reply_markup: reportKeyboard(report.key, report.prev, report.next, view, { month: !!report.month, banks, bankName: (id) => WHITELIST_BOTS[id] ?? String(id) }),
       });
     };

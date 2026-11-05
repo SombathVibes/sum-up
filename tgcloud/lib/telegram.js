@@ -20,12 +20,28 @@ export async function parseCommand(text) {
   return match[1].toLowerCase();
 }
 
-/** editMessageText that ignores "message is not modified". */
+const notModified = (e) => e instanceof BotApiError && e.description?.includes('message is not modified');
+
+/**
+ * editMessageText that ignores "message is not modified". With extra.rich
+ * (rich-message HTML, lib/rich.js) the message becomes a rich message; if
+ * Telegram refuses that, `text` (the ordinary HTML form) is used instead.
+ */
 export async function edit(chatId, messageId, text, extra = {}) {
+  const { rich, parse_mode, ...rest } = extra;
+  if (rich) {
+    try {
+      return await api.editMessageText({ chat_id: chatId, message_id: messageId, rich_message: { html: rich }, ...rest });
+    } catch (e) {
+      if (notModified(e)) return undefined;
+      console.error('rich edit refused, sending the text form:', e.description ?? e.message);
+    }
+  }
   try {
-    await api.editMessageText({ chat_id: chatId, message_id: messageId, text, ...extra });
+    return await api.editMessageText({ chat_id: chatId, message_id: messageId, text, parse_mode, ...rest });
   } catch (e) {
-    if (!(e instanceof BotApiError && e.description?.includes('message is not modified'))) throw e;
+    if (!notModified(e)) throw e;
+    return undefined;
   }
 }
 
@@ -37,10 +53,23 @@ export async function deleteQuietly(chatId, messageId) {
   }
 }
 
-/** Sends a { text, parse_mode, reply_markup, photo? } screen; with a photo the text is its caption. */
-export const sendScreen = (chatId, { photo, text, ...extra }) => (photo
-  ? api.sendPhoto({ chat_id: chatId, photo, caption: text, ...extra })
-  : api.sendMessage({ chat_id: chatId, text, ...extra }));
+/**
+ * Sends a { text, parse_mode, reply_markup, photo?, rich? } screen; with a
+ * photo the text is its caption; with `rich` it goes as a rich message (the
+ * text form if that's refused).
+ */
+export async function sendScreen(chatId, { photo, text, rich, ...extra }) {
+  if (photo) return api.sendPhoto({ chat_id: chatId, photo, caption: text, ...extra });
+  if (rich) {
+    const { parse_mode, ...rest } = extra;
+    try {
+      return await api.sendRichMessage({ chat_id: chatId, rich_message: { html: rich }, ...rest });
+    } catch (e) {
+      console.error('rich message refused, sending the text form:', e.description ?? e.message);
+    }
+  }
+  return api.sendMessage({ chat_id: chatId, text, ...extra });
+}
 
 export const sendSupport = async (chatId) =>
   api.sendMessage({

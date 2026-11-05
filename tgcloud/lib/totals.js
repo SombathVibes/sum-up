@@ -11,9 +11,12 @@
 
 import { subjectTotals } from './agents.js';
 import { addDays, addMonths, dayKey, monthKey, parseDayKey, parseMonthKey, startOf, today } from './dates.js';
-import { REPORT_NAME, subjectLabel, subjectToken } from './daily.js';
+import { subjectLabel, subjectToken } from './daily.js';
+import { col, Doc } from './rich.js';
 
-const btn = (text, callback_data) => ({ text, callback_data });
+const btn = (text, callback_data, style) => ({ text, callback_data, ...(style ? { style } : {}) });
+// The week/month day table: day of the month, bet, payout, win/lose.
+const DAY_COLS = [col('ថ្ងៃ', 'Day', 6), col('ចាក់', 'Bet', 10), col('សង', 'Reward', 10), col('ចំណេញ', 'W/L', 10)];
 const escape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const riel = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
 const dm = (key) => `${key.slice(8, 10)}/${key.slice(5, 7)}`;
@@ -119,47 +122,40 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
   const [cur, prev] = await Promise.all([subjectTotals(login, who, p.days, { refresh }), subjectTotals(login, who, previousDays(p)).catch(() => null)]);
   const r = cur.report;
   const s = cur.send;
-  const lines = [
-    `<b>💰 សរុប · ${p.label}</b>`,
-    `${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)} · ${escape(subjectLabel(who))}`,
-    '',
-  ];
+  const doc = new Doc()
+    .title(`💰 សរុប · ${p.label}`)
+    .line(`${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)} · ${escape(subjectLabel(who))}`)
+    .line('');
   if (!r.commissionKhr && !r.winLoseAmountKhr && !s.commissionKhr) {
-    lines.push('មិនទាន់មានការចាក់ទេ។');
+    doc.line('មិនទាន់មានការចាក់ទេ។');
   } else {
-    lines.push(
-      `<b>${profit(r.winLoseAmountKhr)}</b>`,
-      `ចាក់ ៛${riel(r.commissionKhr)}`,
-      `សង ៛${riel(r.rewardAmountKhr)}`,
-    );
-    if (r.winLoseAmountUsd) lines.push(`💵 USD: $${Number(r.winLoseAmountUsd).toFixed(2)}`);
+    doc.bold(profit(r.winLoseAmountKhr)).line(`ចាក់ ៛${riel(r.commissionKhr)}`).line(`សង ៛${riel(r.rewardAmountKhr)}`);
+    if (r.winLoseAmountUsd) doc.line(`💵 USD: $${Number(r.winLoseAmountUsd).toFixed(2)}`);
     const before = prev && !prev.missing ? prev.report.winLoseAmountKhr : null;
     if (before) {
       const pct = Math.round(((r.winLoseAmountKhr - before) / Math.abs(before)) * 100);
-      lines.push(`${p.prevLabel} (៛${riel(before)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
+      doc.line(`${p.prevLabel} (៛${riel(before)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
     }
-    // A week or month: the days in a folded table (day of the month, bet,
-    // payout and win/lose, like the by-draw report's), one for each side.
+    // A week or month: the days in a table (day of the month, bet, payout and
+    // win/lose), one for each side.
     const table = (field, t) => {
-      if (p.kind === 'day') return [];
-      const line = (a, b, c, d) => `${String(a).padEnd(6)}${String(b).padStart(10)}${String(c).padStart(10)}${String(d).padStart(10)}`;
-      const rule = '─'.repeat(36);
-      const rows = cur.perDay.filter((d) => d[field]).map((d) => line(d.day.slice(8, 10), riel(d[field].commissionKhr), riel(d[field].rewardAmountKhr), riel(d[field].winLoseAmountKhr)));
-      if (!rows.length) return [];
-      return ['', `<blockquote expandable><pre>${escape([line('Day', 'Bet', 'Reward', 'W/L'), rule, ...rows, rule, line('Total', riel(t.commissionKhr), riel(t.rewardAmountKhr), riel(t.winLoseAmountKhr))].join('\n'))}</pre></blockquote>`];
+      if (p.kind === 'day') return;
+      const rows = cur.perDay.filter((d) => d[field]).map((d) => [d.day.slice(8, 10), riel(d[field].commissionKhr), riel(d[field].rewardAmountKhr), riel(d[field].winLoseAmountKhr)]);
+      doc.line('').table(DAY_COLS, rows, { total: ['Total', riel(t.commissionKhr), riel(t.rewardAmountKhr), riel(t.winLoseAmountKhr)], fold: `ប្រចាំថ្ងៃ (${rows.length})` });
     };
-    lines.push(...table('report', r));
+    table('report', r);
     // 📤 សាង below, with its own table.
     if (s.commissionKhr || s.winLoseAmountKhr) {
-      lines.push('', '━━━━━━━━━━━━', `<b>📤 សាង · ${profit(s.winLoseAmountKhr)}</b>`, `ចាក់ ៛${riel(s.commissionKhr)} · សង ៛${riel(s.rewardAmountKhr)}`, ...table('send', s));
+      doc.rule().bold(`📤 សាង · ${profit(s.winLoseAmountKhr)}`).line(`ចាក់ ៛${riel(s.commissionKhr)} · សង ៛${riel(s.rewardAmountKhr)}`);
+      table('send', s);
     }
   }
-  if (cur.missing) lines.push('', `⏳ ទាញបាន ${p.days.length - cur.missing}/${p.days.length} ថ្ងៃ — ចុច «🔄 ទាញថ្មី» ដើម្បីបន្ត។${cur.error ? `\n⚠️ ${escape(cur.error.slice(0, 160))}` : ''}`);
+  if (cur.missing) doc.line('').line(`⏳ ទាញបាន ${p.days.length - cur.missing}/${p.days.length} ថ្ងៃ — ចុច «🔄 ទាញថ្មី» ដើម្បីបន្ត។${cur.error ? `\n⚠️ ${escape(cur.error.slice(0, 160))}` : ''}`);
   const nav = [btn(`◀`, p.prev)];
-  nav.push(btn('🔄 ទាញថ្មី', `${data}!`));
+  nav.push(btn('🔄 ទាញថ្មី', `${data}!`, 'success'));
   if (p.next) nav.push(btn('▶', p.next));
   return {
-    text: lines.join('\n'),
+    ...doc.out(),
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', `TOT_${subjectToken(who.key)}`), ...(canSwitch ? [btn('🔀 ប្តូរអ្នក', 'TOTWHO')] : [])], [btn('⬅️ ត្រឡប់ក្រោយ', `DRTYPE_${subjectToken(who.key)}`)]] },
   };

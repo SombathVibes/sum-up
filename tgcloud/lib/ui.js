@@ -5,7 +5,8 @@ import {
   addDays, addMonths, dayKey, dayOf, monthKey, monthRange, pad2, startOf,
 } from './dates.js';
 
-const btn = (text, data) => ({ text, callback_data: data });
+// style (Bot API 9.4): 'primary' (blue), 'success' (green) or 'danger' (red).
+const btn = (text, data, style) => ({ text, callback_data: data, ...(style ? { style } : {}) });
 // A greyed-out button that does nothing (Bot API 10.3).
 const blank = (text = ' ') => ({ text, disabled: {} });
 const keyboard = (rows) => ({ inline_keyboard: rows.filter((r) => r.length) });
@@ -29,9 +30,9 @@ const SUBSCRIBE_ROW_DAYS = 10;
  * 📊 Excel ភ្នាក់ងារ (the private admin panel, and the group's report signs in).
  */
 export const menuKeyboard = (admin = false, status = null, dailyReport = false, agentExcel = false) => keyboard([
-  [btn(`📊 ${BANK_REPORT}`, 'BANK')],
+  [btn(`📊 ${BANK_REPORT}`, 'BANK', 'primary')],
   // Only groups a super admin switched Daily report on for (lib/daily.js).
-  dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DRTYPE')] : [],
+  dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DRTYPE', 'primary')] : [],
   !status || (status.kind !== 'lifetime' && status.daysLeft <= SUBSCRIBE_ROW_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
   agentExcel ? [btn('📊 Excel ភ្នាក់ងារ', 'XL')] : [],
   admin ? [btn('⚙️ Sync', 'SYNC_MENU')] : [],
@@ -213,7 +214,7 @@ export function reportKeyboard(key, prev, next, view, { day = false, month = fal
       ...banks.map((id) => btn(mark(view.bank === id, bankName(id)), at(key, { bank: id }))),
     ], 3));
   }
-  rows.push([btn('◀', at(prev)), btn('🔄 ទាញថ្មី', `${at(key)}!`), ...(next ? [btn('▶', at(next))] : [])]);
+  rows.push([btn('◀', at(prev)), btn('🔄 ទាញថ្មី', `${at(key)}!`, 'success'), ...(next ? [btn('▶', at(next))] : [])]);
   rows.push([day ? btn('📅 ថ្ងៃផ្សេង', 'BANK') : btn('📅 រយៈពេលផ្សេង', 'BANKTOT'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
   return keyboard(rows);
 }

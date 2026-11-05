@@ -28,6 +28,9 @@ A payment can arrive both live and through the helper. In basic groups each acco
 
 ## Reports
 
+**How reports look:** the report screens (bank day/week/month, 📥 by-draw, 💰 totals) are Telegram **rich messages** (Bot API 10.1+): real tables with Khmer headers and numbers aligned right, folding sections, and times shown in each reader's own time zone (`<tg-time>`; the 📥 "fetched" time is relative, e.g. "5 minutes ago"). Each screen is built once with `lib/rich.js` (`Doc`), which also gives the ordinary HTML form (monospace tables, expandable quotes); if Telegram refuses a rich edit, `edit()` sends that form instead. Main buttons are coloured (`style`, Bot API 9.4): 📊 / 📥 / 📋 / 💰 blue, 🔄 green.
+
+
 Laid out like the 📥 lottery report: `/menu` → **📊 របាយការណ៍ធនាគារ** opens a day picker, one tap per day: today, yesterday and five more days (a week per page, ◀ សប្ដាហ៍មុន / សប្ដាហ៍ក្រោយ ▶), • on days with payments, plus **📅 ប្រតិទិន** for any day. **💰 សរុប** picks a week or a month (this/last, or the 📅 year view for any month).
 
 - **Day:** a compact table per bank (payments, KHR, USD) with a total. 🗂 កាត switches to cards: a block per bank with its time span, and the day's payments in a collapsible quote (the latest 100). Both end with the change versus yesterday and versus the same weekday last week.

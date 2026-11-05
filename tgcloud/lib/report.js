@@ -1,7 +1,8 @@
-// Report text. Amounts arrive in hundredths.
+// Report screens as { text, rich } (lib/rich.js). Amounts arrive in hundredths.
 
 import { WHITELIST_BOTS } from './config.js';
 import { addDays, dayKey, dayOf, formatTime, now, pad2 } from './dates.js';
+import { col, Doc, time } from './rich.js';
 
 const CURRENCIES = ['KHR', 'USD'];
 
@@ -65,6 +66,9 @@ function dayComparison(total, weekday, compare) {
   return [versus('ធៀបម្សិលមិញ', compare.yesterday), versus(`ធៀបថ្ងៃ${weekday}មុន`, compare.lastWeek)].filter(Boolean);
 }
 
+/** Who asked and when: the reader sees the time in their own time zone. */
+const footer = (doc, user) => doc.line(`<i>🕔 ${time(now(), formatTime(now()))} · ${byName(user)}</i>`);
+
 /**
  * One day as cards (🗂 កាត): a block per bank (payments, time span, amounts),
  * a total when there's more than one bank, then the payments folded and the
@@ -76,54 +80,51 @@ export function dayReport(day, rows, user, recent = [], compare = {}) {
   const weekday = WEEKDAYS[new Date(Date.UTC(day.y, day.m - 1, day.d)).getUTCDay()];
   const { bots, total } = summarize(rows);
 
-  const out = [`<b>📊 របាយការណ៍ ថ្ងៃ${weekday} ${pad2(day.d)}/${pad2(day.m)}/${day.y}</b>`, ''];
-  if (!bots.length) out.push('មិនទាន់មានប្រតិបត្តិការទេ។', '');
+  const doc = new Doc().title(`📊 របាយការណ៍ ថ្ងៃ${weekday} ${pad2(day.d)}/${pad2(day.m)}/${day.y}`).line('');
+  if (!bots.length) doc.line('មិនទាន់មានប្រតិបត្តិការទេ។').line('');
   for (const b of bots) {
-    out.push(`<b>🏦 ${escapeHtml(b.name)}</b> · ${b.ops} ប្រតិ. · ${formatTime(b.first)}–${formatTime(b.last)}`, ...amounts(b), '');
+    doc.line(`<b>🏦 ${escapeHtml(b.name)}</b> · ${b.ops} ប្រតិ. · ${formatTime(b.first)}–${formatTime(b.last)}`);
+    for (const a of amounts(b)) doc.line(a);
+    doc.line('');
   }
   if (bots.length > 1) {
-    out.push('━━━━━━━━━━━━', `<b>💰 សរុប · ${total.ops} ប្រតិបត្តិការ</b>`, ...amounts(total), '');
+    doc.rule().bold(`💰 សរុប · ${total.ops} ប្រតិបត្តិការ`);
+    for (const a of amounts(total)) doc.line(a);
+    doc.line('');
   }
-  out.push(...paymentsFold(recent, total.ops));
-  out.push(...dayComparison(total, weekday, compare));
-  out.push(`<i>🕔 ${formatTime(now())} · ${byName(user)}</i>`);
-  return out.join('\n');
+  paymentsTable(doc, recent, total.ops);
+  for (const l of dayComparison(total, weekday, compare)) doc.line(l);
+  return footer(doc, user).out();
 }
 
+// The day table: bank, payments, KHR and USD.
+const BANK_COLS = [col('ធនាគារ', 'Bank', 10), col('ប្រតិ.', 'Ops', 6), col('រៀល', 'KHR', 15), col('ដុល្លារ', 'USD', 12)];
+
 /**
- * One day as a compact monospace table (📋 តារាង, the default), one row per
- * bank plus a total. English column headers keep the columns aligned (Khmer
- * isn't fixed-width).
+ * One day as a table (📋 តារាង, the default), one row per bank plus a total;
+ * no USD column on a day without dollar payments.
  */
 export function dayTable(day, rows, user, compare = {}) {
   const weekday = WEEKDAYS[new Date(Date.UTC(day.y, day.m - 1, day.d)).getUTCDay()];
   const { bots, total } = summarize(rows);
-  // No dollar payments that day: leave the USD column out.
   const usd = total.USD !== 0;
-  const row = (name, ops, khr, usdCell) =>
-    `${String(name).padEnd(10)}${String(ops).padStart(6)}${String(khr).padStart(15)}${usd ? String(usdCell).padStart(12) : ''}`;
-  const rule = '─'.repeat(usd ? 43 : 31);
-  const lines = [
-    row('Bank', 'Ops', 'KHR', 'USD'),
-    rule,
-    ...bots.map((b) => row(b.name.slice(0, 10), b.ops, money(b.KHR), money(b.USD))),
-    rule,
-    row('Total', total.ops, money(total.KHR), money(total.USD)),
-  ];
-  return [
-    `<b>📊 របាយការណ៍ ថ្ងៃ${weekday} ${pad2(day.d)}/${pad2(day.m)}/${day.y}</b>`,
-    bots.length ? `<pre>${escapeHtml(lines.join('\n'))}</pre>` : 'មិនទាន់មានប្រតិបត្តិការទេ។',
-    ...dayComparison(total, weekday, compare),
-    `<i>🕔 ${formatTime(now())} · ${byName(user)}</i>`,
-  ].join('\n');
+  const cols = usd ? BANK_COLS : BANK_COLS.slice(0, 3);
+  const cells = (name, ops, x) => [name, String(ops), money(x.KHR), money(x.USD)].slice(0, cols.length);
+  const doc = new Doc().title(`📊 របាយការណ៍ ថ្ងៃ${weekday} ${pad2(day.d)}/${pad2(day.m)}/${day.y}`);
+  if (bots.length) doc.table(cols, bots.map((b) => cells(b.name.slice(0, 10), b.ops, b)), { total: cells('Total', total.ops, total) });
+  else doc.line('មិនទាន់មានប្រតិបត្តិការទេ។');
+  for (const l of dayComparison(total, weekday, compare)) doc.line(l);
+  return footer(doc, user).out();
 }
 
-/** The day's payments in a collapsible quote; the store caps the list (100), which the title says when the day has more. */
-function paymentsFold(recent, ops) {
-  if (!recent.length) return [];
-  const lines = recent.map((p) => `${formatTime(p.date)}  ${SYMBOL[p.currency]}${money(p.amount)}  ${escapeHtml(botName(p.botTgId))}`);
+// The day's payments: time, amount, bank.
+const PAYMENT_COLS = [col('ម៉ោង', 'Time', 9), col('ចំនួន', 'Amount', 13), col('ធនាគារ', 'Bank', 9, true)];
+
+/** The day's payments in a folded table; the store caps the list (100), which the title says when the day has more. */
+function paymentsTable(doc, recent, ops) {
+  if (!recent.length) return;
   const title = recent.length < ops ? `🧾 ប្រតិបត្តិការចុងក្រោយ ${recent.length}/${ops}` : `🧾 ប្រតិបត្តិការទាំងអស់ (${ops})`;
-  return [`<blockquote expandable>${title}\n${lines.join('\n')}</blockquote>`];
+  doc.table(PAYMENT_COLS, recent.map((p) => [formatTime(p.date), `${SYMBOL[p.currency]}${money(p.amount)}`, `  ${botName(p.botTgId)}`]), { fold: title });
 }
 
 const EN_WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -184,38 +185,35 @@ export function rangeReport(range, data, user, { month = false, daily = false, b
   const sum = days.reduce((t, e) => ({ ops: t.ops + e.ops, KHR: t.KHR + e.KHR, USD: t.USD + e.USD }), { ops: 0, KHR: 0, USD: 0 });
   // No dollar payments in the range: leave the USD column out.
   const usd = sum.USD !== 0;
-  const line = (label, ops, khr, usdCell) =>
-    `${String(label).padEnd(10)}${String(ops).padStart(6)}${String(khr).padStart(15)}${usd ? String(usdCell).padStart(12) : ''}`;
-  const rule = '─'.repeat(usd ? 43 : 31);
-  const table = [
-    line(month && !daily ? 'Week' : 'Day', 'Ops', 'KHR', 'USD'),
-    rule,
-    ...rows.map((r) => line(r.label, dotIfZero(r.ops), dotIfZero(r.KHR, money), dotIfZero(r.USD, money))),
-    rule,
-    line('Total', sum.ops, money(sum.KHR), money(sum.USD)),
+  const cols = [
+    month && !daily ? col('សប្ដាហ៍', 'Week', 10) : col('ថ្ងៃ', 'Day', 10),
+    ...BANK_COLS.slice(1, usd ? 4 : 3),
   ];
+  const cells = (label, ops, khr, usdCell) => [label, ops, khr, usdCell].slice(0, cols.length).map(String);
 
   const bankLabel = bank ? ` · ${escapeHtml(botName(bank))}` : '';
   const title = month
     ? `📊 ខែ ${pad2(first.m)}/${first.y}${bankLabel}`
     : `📊 សប្ដាហ៍ ${pad2(first.d)}/${pad2(first.m)} – ${pad2(last.d)}/${pad2(last.m)}/${last.y}${bankLabel}`;
 
-  const out = [`<b>${title}</b>`, `<pre>${escapeHtml(table.join('\n'))}</pre>`];
+  const doc = new Doc().title(title).table(cols, rows.map((r) => cells(r.label, dotIfZero(r.ops), dotIfZero(r.KHR, money), dotIfZero(r.USD, money))), {
+    total: cells('Total', sum.ops, money(sum.KHR), money(sum.USD)),
+  });
 
   // One line per bank (only the filtered bank when filtering).
   const plain = (x) => CURRENCIES.filter((c) => x[c]).map((c) => `${SYMBOL[c]}${money(x[c])}`);
   const { bots } = summarize(bank ? data.bots.filter((r) => r.botTgId === bank) : data.bots);
-  for (const b of bots) out.push(`🏦 ${escapeHtml(b.name)} ${b.ops} · ${plain(b).join(' · ')}`);
+  for (const b of bots) doc.line(`🏦 ${escapeHtml(b.name)} ${b.ops} · ${plain(b).join(' · ')}`);
 
   const active = days.filter((e) => e.ops);
   if (active.length) {
     const best = active.reduce((a, e) => (e.ops > a.ops ? e : a));
-    out.push(`📈 ថ្ងៃច្រើនបំផុត: ${EN_WEEKDAYS[weekdayOf(best.day)]} ${pad2(best.day.d)}/${pad2(best.day.m)} · ${best.ops} ប្រតិ. · ${plain(best).join(' · ')}`);
+    doc.line(`📈 ថ្ងៃច្រើនបំផុត: ${EN_WEEKDAYS[weekdayOf(best.day)]} ${pad2(best.day.d)}/${pad2(best.day.m)} · ${best.ops} ប្រតិ. · ${plain(best).join(' · ')}`);
   }
   if (month) {
     const avg = { KHR: active.length ? sum.KHR / active.length : 0, USD: active.length ? sum.USD / active.length : 0 };
     const avgText = plain(avg).join(' · ');
-    out.push(`📅 មានប្រតិបត្តិការ ${active.length}/${days.length} ថ្ងៃ${avgText ? ` · មធ្យម ${avgText}/ថ្ងៃ` : ''}`);
+    doc.line(`📅 មានប្រតិបត្តិការ ${active.length}/${days.length} ថ្ងៃ${avgText ? ` · មធ្យម ${avgText}/ថ្ងៃ` : ''}`);
   }
 
   const prev = summarize(bank ? data.prev.filter((r) => r.botTgId === bank) : data.prev).total;
@@ -223,8 +221,7 @@ export function rangeReport(range, data, user, { month = false, daily = false, b
     .map((c) => [c, change(sum[c], prev[c])])
     .filter(([, v]) => v)
     .map(([c, v]) => `${SYMBOL[c]} ${v}`);
-  if (changes.length) out.push(`ធៀប${month ? 'ខែមុន' : 'សប្ដាហ៍មុន'}: ${changes.join(' · ')}`);
+  if (changes.length) doc.line(`ធៀប${month ? 'ខែមុន' : 'សប្ដាហ៍មុន'}: ${changes.join(' · ')}`);
 
-  out.push(`<i>🕔 ${formatTime(now())} · ${byName(user)}</i>`);
-  return out.join('\n');
+  return footer(doc, user).out();
 }

@@ -13,6 +13,7 @@ import { and, desc, eq, gte, lt, lte } from 'sdk/db';
 import { agents, drawReports, groupLotterySettings } from '../schema.js';
 import { addDays, dayKey, formatTime, now, pad2, parseDayKey, today } from './dates.js';
 import { getLogin, loginUser, nowHHMM, openSession, REPORT_PATH, replyReason } from './logins.js';
+import { col, Doc, time } from './rich.js';
 
 export { nowHHMM };
 
@@ -391,32 +392,30 @@ const profit = (wl) => (wl < 0 ? `📉 ខាត ៛${riel(-wl)}` : `📈 ចំ
 function formatLottery(data, prevWl = null, data2 = null) {
   const lotteries = lotteriesOf(data);
   if (!lotteries) return null;
+  const doc = new Doc();
   if (!lotteries.length) {
     // The report exists but no draw has a result yet (e.g. early in the day).
     const amounts = (data.data.underSummary?.totalAmounts ?? []).filter((t) => Number(t.totalAmountKhr) || Number(t.totalAmountUsd));
-    const lines = ['⏳ មិនទាន់មានលទ្ធផលឆ្នោតនៅឡើយ។'];
+    doc.line('⏳ មិនទាន់មានលទ្ធផលឆ្នោតនៅឡើយ។');
     if (amounts.length) {
-      lines.push('', '<b>ចំនួនសរុប</b>');
-      for (const t of amounts) lines.push(`🎰 ${escape(t.lotteryType)}: ៛${riel(t.totalAmountKhr)}${Number(t.totalAmountUsd) ? ` · $${Number(t.totalAmountUsd).toFixed(2)}` : ''}`);
-      if (amounts.length > 1) lines.push(`<b>💰 សរុប: ៛${riel(amounts.reduce((n, t) => n + (Number(t.totalAmountKhr) || 0), 0))}</b>`);
+      doc.line('').bold('ចំនួនសរុប');
+      for (const t of amounts) doc.line(`🎰 ${escape(t.lotteryType)}: ៛${riel(t.totalAmountKhr)}${Number(t.totalAmountUsd) ? ` · $${Number(t.totalAmountUsd).toFixed(2)}` : ''}`);
+      if (amounts.length > 1) doc.bold(`💰 សរុប: ៛${riel(amounts.reduce((n, t) => n + (Number(t.totalAmountKhr) || 0), 0))}`);
     }
-    return lines.join('\n');
+    return doc;
   }
 
   const total = lotteryTotals(lotteries);
   const share = lotteries[0].summary;
-  const out = [
-    `<b>${profit(total.wl)}</b>`,
-    `👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`,
-    `ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`,
-  ];
-  if (total.usd) out.push(`💵 USD: $${total.usd.toFixed(2)}`);
+  doc.bold(profit(total.wl))
+    .line(`👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`)
+    .line(`ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`);
+  if (total.usd) doc.line(`💵 USD: $${total.usd.toFixed(2)}`);
   if (prevWl) {
     const pct = Math.round(((total.wl - prevWl) / Math.abs(prevWl)) * 100);
-    out.push(`ធៀបម្សិលមិញ (៛${riel(prevWl)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
+    doc.line(`ធៀបម្សិលមិញ (៛${riel(prevWl)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
   }
-
-  out.push(...lotterySections(lotteries));
+  lotterySections(doc, lotteries);
 
   // The second URL's reply (e.g. isSend=true), when it has draws: its own
   // result and lotteries, below the main ones.
@@ -424,46 +423,48 @@ function formatLottery(data, prevWl = null, data2 = null) {
   if (second?.length) {
     const t2 = lotteryTotals(second);
     const draws = second.reduce((n, u) => n + u.items.length, 0);
-    out.push('', '━━━━━━━━━━━━', `<b>📤 សាង · ${profit(t2.wl)}</b>`, `ចាក់ ៛${riel(t2.bet)} · សង ៛${riel(t2.reward)} · ${draws} វេន`);
-    out.push(...lotterySections(second));
+    doc.rule().bold(`📤 សាង · ${profit(t2.wl)}`).line(`ចាក់ ៛${riel(t2.bet)} · សង ៛${riel(t2.reward)} · ${draws} វេន`);
+    lotterySections(doc, second);
   }
-  return out.join('\n');
+  return doc;
 }
 
-/** Per lottery: its result, then its draws by time in a table folded into an expandable quote. */
-function lotterySections(lotteries) {
-  const line = (a, b, c, d) => `${String(a).padEnd(8)}${String(b).padStart(9)}${String(c).padStart(9)}${String(d).padStart(9)}`;
-  const rule = '─'.repeat(35);
-  const out = [];
+// A lottery's draws: Phnom Penh time, bet, payout, win/lose.
+const DRAW_COLS = [col('ម៉ោង', 'Time', 8), col('ចាក់', 'Bet', 9), col('សង', 'Reward', 9), col('ចំណេញ', 'W/L', 9)];
+
+/** Per lottery: its result, then its draws in a folded table. */
+function lotterySections(doc, lotteries) {
   for (const u of lotteries) {
     const s = u.summary;
     const rows = [...u.items].sort((a, b) => String(a.drawAtPP ?? a.drawAt).localeCompare(String(b.drawAtPP ?? b.drawAt)));
-    const table = [
-      line('Time', 'Bet', 'Reward', 'W/L'),
-      rule,
-      ...rows.map((it) => line(drawTime(it), riel(it.betAmountKhr ?? it.commissionKhr), riel(it.rewardAmountKhr), riel(it.winLoseAmountKhr))),
-      rule,
-      line('Total', riel(s.commissionKhr), riel(s.rewardAmountKhr), riel(s.winLoseAmountKhr)),
-    ];
-    out.push(
-      '',
-      `<b>🎰 ${escape(u.lotteryType)}</b> · ${rows.length} វេន · ${profit(Number(s.winLoseAmountKhr) || 0)}`,
-      `<blockquote expandable><pre>${escape(table.join('\n'))}</pre></blockquote>`,
-    );
+    doc.line('')
+      .line(`<b>🎰 ${escape(u.lotteryType)}</b> · ${rows.length} វេន · ${profit(Number(s.winLoseAmountKhr) || 0)}`)
+      .table(DRAW_COLS, rows.map((it) => [drawTime(it), riel(it.betAmountKhr ?? it.commissionKhr), riel(it.rewardAmountKhr), riel(it.winLoseAmountKhr)]), {
+        total: ['Total', riel(s.commissionKhr), riel(s.rewardAmountKhr), riel(s.winLoseAmountKhr)],
+        fold: `ប្រចាំវេន (${rows.length})`,
+      });
   }
-  return out;
 }
 
 /**
- * A saved report as a Telegram message (HTML): known report shapes laid out,
- * other JSON as key/value lines, anything else as text. `prev` is the day
- * before's snapshot, for the lottery report's comparison; `who` the subject.
+ * A saved report as a screen's { text, rich } (lib/rich.js): the title, the
+ * group (or login) and whose, the lottery report (formatLottery), and when it
+ * was fetched, as a time each reader sees relative to now.
  */
 export function formatReport(group, row, prev = null, who = null) {
   const [y, m, d] = row.day.split('-');
-  const head = `<b>📥 ${REPORT_NAME} · ${d}/${m}/${y}</b>\n${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)}${who ? ` · ${escape(subjectLabel(who))}` : ''}`;
-  const foot = row.ranAt ? `\n\n<i>🕘 ទាញយកម៉ោង ${formatTime(row.ranAt)}</i>` : '';
-  if (!row.ok) return `${head}\n\n⚠️ ${escape(row.error ?? 'Failed')}${foot}`;
+  const doc = new Doc()
+    .title(`📥 ${REPORT_NAME} · ${d}/${m}/${y}`)
+    .line(`${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)}${who ? ` · ${escape(subjectLabel(who))}` : ''}`)
+    .line('');
+  const foot = () => {
+    if (row.ranAt) doc.line('').line(`<i>🕘 ទាញយក ${time(row.ranAt, formatTime(row.ranAt), 'r')}</i>`);
+    return doc.out();
+  };
+  if (!row.ok) {
+    doc.line(`⚠️ ${escape(row.error ?? 'Failed')}`);
+    return foot();
+  }
   let data;
   try {
     data = JSON.parse(row.body);
@@ -477,22 +478,26 @@ export function formatReport(group, row, prev = null, who = null) {
     // not JSON: nothing to add
   }
   const lottery = formatLottery(data, snapshotWinLose(prev), data2);
-  if (lottery) return `${head}\n\n${lottery.length > 3800 ? `${lottery.slice(0, 3800)}…` : lottery}${foot}`;
+  if (lottery) {
+    doc.add(lottery);
+    return foot();
+  }
   let body;
   if (data && typeof data === 'object' && !Array.isArray(data)) {
-    const lines = Object.entries(data).map(([k, v]) => `${k}: ${typeof v === 'object' && v !== null ? JSON.stringify(v) : v}`);
-    body = lines.join('\n');
+    body = Object.entries(data).map(([k, v]) => `${k}: ${typeof v === 'object' && v !== null ? JSON.stringify(v) : v}`).join('\n');
   } else if (data !== null) {
     body = JSON.stringify(data, null, 2);
   } else {
     body = row.body;
   }
   if (body.length > 3500) body = `${body.slice(0, 3500)}\n…`;
-  return `${head}\n\n<pre>${escape(body || '—')}</pre>${foot}`;
+  doc.line(`<pre>${escape(body || '—')}</pre>`);
+  return foot();
 }
 
 
-const btn = (text, callback_data) => ({ text, callback_data });
+// style (Bot API 9.4): 'primary' (blue), 'success' (green) or 'danger' (red).
+const btn = (text, callback_data, style) => ({ text, callback_data, ...(style ? { style } : {}) });
 const dm = (key) => `${key.slice(8, 10)}/${key.slice(5, 7)}`;
 
 /**
@@ -509,8 +514,8 @@ export function typePicker(who, { canSwitch = false } = {}) {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
-        [btn('📋 របាយការណ៍ប្រចាំថ្ងៃ', `DRNOW${w}`)],
-        [btn('💰 របាយការណ៍សរុប', `TOTNOW${w}`)],
+        [btn('📋 របាយការណ៍ប្រចាំថ្ងៃ', `DRNOW${w}`, 'primary')],
+        [btn('💰 របាយការណ៍សរុប', `TOTNOW${w}`, 'primary')],
         [btn('⬅️ ត្រឡប់ក្រោយ', canSwitch ? 'DRWHO' : 'BACK')],
       ],
     },
@@ -600,12 +605,12 @@ export async function dayReportScreen(group, cfg, who, day, { refresh = false, c
   const nav = [btn(`◀ ${dm(prev)}`, `DREP_${prev}_${tok}`)];
   if (next <= todayKey) nav.push(btn(`${dm(next)} ▶`, `DREP_${next}_${tok}`));
   return {
-    text: formatReport(group, row, await reportForDay(cfg.loginId, prev, who.key), who),
+    ...formatReport(group, row, await reportForDay(cfg.loginId, prev, who.key), who),
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
         nav,
-        [btn('🔄 ទាញថ្មី', `DREP!_${day}_${tok}`), btn('📅 ថ្ងៃផ្សេង', `DRWK_0_${tok}`)],
+        [btn('🔄 ទាញថ្មី', `DREP!_${day}_${tok}`, 'success'), btn('📅 ថ្ងៃផ្សេង', `DRWK_0_${tok}`)],
         canSwitch ? [btn('🔀 ប្តូរអ្នក', `DRWHO_${day}`), btn('⬅️ ត្រឡប់ក្រោយ', `DRTYPE_${tok}`)] : [btn('⬅️ ត្រឡប់ក្រោយ', `DRTYPE_${tok}`)],
       ],
     },
