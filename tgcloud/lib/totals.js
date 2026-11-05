@@ -129,7 +129,7 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
   } else {
     lines.push(
       `<b>${profit(r.winLoseAmountKhr)}</b>`,
-      `ចាក់ ៛${riel(r.commissionKhr)}${[['2D', r.betAmount2DKhr], ['3D', r.betAmount3DKhr], ['4D', r.betAmount4DKhr]].filter(([, v]) => v).map(([k, v]) => ` · ${k} ៛${riel(v)}`).join('')}`,
+      `ចាក់ ៛${riel(r.commissionKhr)}`,
       `សង ៛${riel(r.rewardAmountKhr)}`,
     );
     if (r.winLoseAmountUsd) lines.push(`💵 USD: $${Number(r.winLoseAmountUsd).toFixed(2)}`);
