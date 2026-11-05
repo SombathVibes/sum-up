@@ -30,7 +30,7 @@ import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
 import {
-  RENEW_MONTHS, bankPicker, calendarMenu, menuKeyboard, menuText, renewMenu, reportKeyboard,
+  RENEW_MONTHS, bankDayPicker, bankPeriodPicker, calendarMenu, menuKeyboard, menuText, renewMenu, reportKeyboard,
   syncMenu, yearCalendarMenu,
 } from '../lib/ui.js';
 
@@ -143,6 +143,12 @@ export default async function (query) {
     }
 
     const now = today();
+    /** The bank day picker `page` weeks back, with • on its days that have payments. */
+    const bankDays = async (page) => {
+      const first = addDays(now, -7 * page);
+      const paid = await totalsByDay(group.id, { start: dayRange(addDays(first, -6)).start, end: dayRange(first).end });
+      return bankDayPicker(now, page, new Set(paid.map((r) => r.day)));
+    };
     // 📥 lottery report (lib/daily.js) and 💰 its totals (lib/totals.js). In a
     // group: only the group's member. Super admins in the private panel may
     // switch (🔀) to everyone under the login, an agent or another member, as
@@ -241,12 +247,15 @@ export default async function (query) {
         }
         return show(menuText(status), { reply_markup: { inline_keyboard } });
       }
-      // 📊 the bank report's period picker (DAILY / WEEKLY / MONTHLY: older messages' menus).
+      // 📊 the bank report's day picker (DAILY: older messages' menu), and 💰 its weeks and months.
       case 'BANK':
-      case 'DAILY':
+      case 'DAILY':   return showScreen(await bankDays(0));
+      case 'BANKTOT':
       case 'WEEKLY':
-      case 'MONTHLY': return showScreen(bankPicker(now));
+      case 'MONTHLY': return showScreen(bankPeriodPicker(now));
     }
+
+    if (/^BANKWK_\d{1,3}$/.test(key)) return showScreen(await bankDays(Number(key.slice(7))));
 
     if (key.startsWith('YCAL_')) {
       const year = Number(key.slice(5));
@@ -276,7 +285,7 @@ export default async function (query) {
           lastWeek: await totalsByBot(group.id, dayRange(addDays(report.day, -7))),
         };
         const text = dayTable(report.day, rows, query.from, await recentPayments(group.id, range), compare);
-        return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.prev, report.next) });
+        return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.prev, report.next, { day: true }) });
       }
       const data = {
         days: await totalsByDay(group.id, report.range),

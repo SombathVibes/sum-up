@@ -2,7 +2,7 @@
 // so no session state is stored between clicks.
 
 import {
-  addMonths, dayKey, dayOf, monthKey, monthRange, pad2, startOf,
+  addDays, addMonths, dayKey, dayOf, monthKey, monthRange, pad2, startOf,
 } from './dates.js';
 
 const btn = (text, data) => ({ text, callback_data: data });
@@ -58,19 +58,45 @@ export function menuText(status) {
 }
 
 /**
- * BANK: the bank report's period picker, like the lottery 💰 សរុប: a day, a
- * week (Mon–Sun) or a month, and the calendar for any other day or month.
+ * BANK / BANKWK_<page>: the bank report's day picker, like the 📥 lottery
+ * one: today, yesterday and five more days (a week per page, `page` weeks
+ * back), • on days with payments (paidDays: Set of 'YYYY-MM-DD'); one tap
+ * opens a day. 💰 opens the week and month picker.
  */
-export function bankPicker(today) {
+export function bankDayPicker(today, page, paidDays) {
+  const first = addDays(today, -7 * page);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(first, -i));
+  const label = (d, i) => {
+    const mark = paidDays.has(dayKey(d)) ? ' •' : '';
+    if (page === 0 && i === 0) return `ថ្ងៃនេះ${mark}`;
+    if (page === 0 && i === 1) return `ម្សិលមិញ${mark}`;
+    return `${pad2(d.d)}/${pad2(d.m)}${mark}`;
+  };
+  const buttons = days.map((d, i) => btn(label(d, i), `DATE_${dayKey(d)}`));
   return {
-    text: `<b>📊 ${BANK_REPORT}</b>\nជ្រើសរើសរយៈពេល:`,
+    text: `<b>📊 ${BANK_REPORT}</b>\nជ្រើសរើសថ្ងៃ (• មានប្រតិបត្តិការ):`,
     parse_mode: 'HTML',
     reply_markup: keyboard([
-      [btn('ថ្ងៃនេះ', 'TODAY'), btn('ម្សិលមិញ', 'YESTERDAY')],
+      buttons.slice(0, 2), buttons.slice(2, 5), buttons.slice(5, 7),
+      [btn('◀ សប្ដាហ៍មុន', `BANKWK_${page + 1}`), ...(page > 0 ? [btn('សប្ដាហ៍ក្រោយ ▶', `BANKWK_${page - 1}`)] : [])],
+      [btn('📅 ប្រតិទិន', `CAL_${monthKey(first)}`)],
+      [btn('💰 សរុប (សប្ដាហ៍ · ខែ)', 'BANKTOT')],
+      BACK,
+    ]),
+  };
+}
+
+/** BANKTOT: a week (Mon–Sun) or a month, like the lottery 💰 សរុប. */
+export function bankPeriodPicker(today) {
+  return {
+    text: `<b>💰 ${BANK_REPORT} · សរុប</b>\nជ្រើសរើសរយៈពេល:`,
+    parse_mode: 'HTML',
+    reply_markup: keyboard([
       [btn('សប្ដាហ៍នេះ', 'THIS_WEEK'), btn('សប្ដាហ៍មុន', 'LAST_WEEK')],
       [btn('ខែនេះ', 'THIS_MONTH'), btn('ខែមុន', 'LAST_MONTH')],
-      [btn('📅 ប្រតិទិន', `CAL_${monthKey(today)}`)],
-      BACK,
+      [btn('📅 ប្រតិទិនខែ', `YCAL_${today.y}`)],
+      [btn(`📋 ${BANK_REPORT} (ប្រចាំថ្ងៃ)`, 'BANK')],
+      [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
     ]),
   };
 }
@@ -139,7 +165,7 @@ export function yearCalendarMenu(year, today, paidMonths) {
     reply_markup: keyboard([
       [btn('◀', `YCAL_${year - 1}`), blank(String(year)), year >= today.y ? blank('▶') : btn('▶', `YCAL_${year + 1}`)],
       ...chunk(cells, 3),
-      [btn('⬅️ ត្រឡប់ក្រោយ', 'BANK')],
+      [btn('⬅️ ត្រឡប់ក្រោយ', 'BANKTOT')],
     ]),
   };
 }
@@ -147,13 +173,14 @@ export function yearCalendarMenu(year, today, paidMonths) {
 /**
  * Under every bank report, like the lottery report: ◀ / ▶ the period before
  * and after (▶ only up to today), 🔄 (catch up through the sync helper, then
- * redraw), 📅 another period, and Back to the menu. Keys are absolute
- * (DATE_ / WEEK_ / MONTH_), so a button means the same period tomorrow.
+ * redraw), 📅 back to the day picker (a day) or the week/month picker, and
+ * Back to the menu. Keys are absolute (DATE_ / WEEK_ / MONTH_), so a button
+ * means the same period tomorrow.
  */
-export function reportKeyboard(key, prev, next) {
+export function reportKeyboard(key, prev, next, { day = false } = {}) {
   return keyboard([
     [btn('◀', prev), btn('🔄 ទាញថ្មី', `${key}!`), ...(next ? [btn('▶', next)] : [])],
-    [btn('📅 រយៈពេលផ្សេង', 'BANK'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
+    [day ? btn('📅 ថ្ងៃផ្សេង', 'BANK') : btn('📅 រយៈពេលផ្សេង', 'BANKTOT'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
   ]);
 }
 

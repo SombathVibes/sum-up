@@ -28,11 +28,11 @@ A payment can arrive both live and through the helper. In basic groups each acco
 
 ## Reports
 
-Laid out like the 📥 lottery report: `/menu` → **📊 របាយការណ៍ធនាគារ** opens one period picker (today, yesterday, this/last week, this/last month, and a **📅 calendar** for any day; payment days are marked •, future days greyed out, and the month title opens that month).
+Laid out like the 📥 lottery report: `/menu` → **📊 របាយការណ៍ធនាគារ** opens a day picker, one tap per day: today, yesterday and five more days (a week per page, ◀ សប្ដាហ៍មុន / សប្ដាហ៍ក្រោយ ▶), • on days with payments, plus **📅 ប្រតិទិន** for any day. **💰 សរុប** picks a week or a month (this/last, or the 📅 year view for any month).
 
 - **Day:** a table per bank (payments, KHR, USD) with a total, the day's payments folded in a collapsible quote (the latest 100), and the change versus yesterday and versus the same weekday last week.
 - **Week:** a row per day; **month:** a row per Monday-to-Sunday week. Under the table: a line per bank, the busiest day, days with payments and the average per day (month), and the change versus the previous period.
-- Every report has **◀ ▶** for the period before and after (▶ stops at today), **🔄 ទាញថ្មី** (catch up through the sync helper, then redraw), **📅 រយៈពេលផ្សេង** back to the picker, and ⬅️ to the menu. Buttons name the period absolutely (`DATE_`, `WEEK_<Monday>`, `MONTH_`), so they mean the same period tomorrow. Buttons on older messages still work: the old daily/weekly/monthly menus open the picker, and their view options (`~c`, `~d`, `~b…`) are ignored.
+- Every report has **◀ ▶** for the period before and after (▶ stops at today), **🔄 ទាញថ្មី** (catch up through the sync helper, then redraw), **📅 ថ្ងៃផ្សេង** (a day) or **📅 រយៈពេលផ្សេង** (a week or month) back to its picker, and ⬅️ to the menu. Buttons name the period absolutely (`DATE_`, `WEEK_<Monday>`, `MONTH_`), so they mean the same period tomorrow. Buttons on older messages still work: the old daily menu opens the day picker and the weekly/monthly ones the 💰 picker, and their view options (`~c`, `~d`, `~b…`) are ignored.
 
 ## Admin panel (private chat)
 
