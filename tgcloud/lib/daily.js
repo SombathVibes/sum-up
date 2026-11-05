@@ -497,8 +497,10 @@ const dm = (key) => `${key.slice(8, 10)}/${key.slice(5, 7)}`;
 
 /**
  * DRTYPE: what 📥 opens on, the report type first: 📋 the by-draw report per
- * day, or 💰 totals for a day, a week or a month. With `canSwitch` (the
- * panel's own 📥) each then asks whose; in a group, `who` is its member.
+ * day, or 💰 totals for a day, a week or a month. Each opens on today
+ * (DRNOW / TOTNOW), where ◀ ▶ and 📅 pick another day or period. With
+ * `canSwitch` (the panel's own 📥) each first asks whose; in a group, `who`
+ * is its member.
  */
 export function typePicker(who, { canSwitch = false } = {}) {
   return {
@@ -506,8 +508,8 @@ export function typePicker(who, { canSwitch = false } = {}) {
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
-        [btn('📋 របាយការណ៍ប្រចាំថ្ងៃ', canSwitch ? 'DRWHO' : 'DREPORT')],
-        [btn('💰 របាយការណ៍សរុប', canSwitch ? 'TOTWHO' : 'TOT')],
+        [btn('📋 របាយការណ៍ប្រចាំថ្ងៃ', canSwitch ? 'DRWHO' : 'DRNOW')],
+        [btn('💰 របាយការណ៍សរុប', canSwitch ? 'TOTWHO' : 'TOTNOW')],
         [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
       ],
     },
@@ -536,7 +538,6 @@ export async function dayPicker(cfg, who, page = 0, { canSwitch = false } = {}) 
   const rows = [buttons.slice(0, 2), buttons.slice(2, 5), buttons.slice(5, 7)];
   rows.push([btn('◀ សប្ដាហ៍មុន', `DRWK_${page + 1}_${tok}`), ...(page > 0 ? [btn('សប្ដាហ៍ក្រោយ ▶', `DRWK_${page - 1}_${tok}`)] : [])]);
   if (canSwitch) rows.push([btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'DRWHO')]);
-  rows.push([btn('💰 របាយការណ៍សរុប', `TOT_${tok}`)]);
   rows.push([btn('⬅️ ត្រឡប់ក្រោយ', 'DRTYPE')]);
   return {
     text: `<b>📥 ${REPORT_NAME}</b>\n${escape(subjectLabel(who))}\nជ្រើសរើសថ្ងៃ (• មានរបាយការណ៍រួច):`,
@@ -604,7 +605,7 @@ export async function dayReportScreen(group, cfg, who, day, { refresh = false, c
       inline_keyboard: [
         nav,
         [btn('🔄 ទាញថ្មី', `DREP!_${day}_${tok}`), btn('📅 ថ្ងៃផ្សេង', `DRWK_0_${tok}`)],
-        canSwitch ? [btn('🔀 ប្តូរអ្នក', `DRWHO_${day}`), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')] : [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
+        canSwitch ? [btn('🔀 ប្តូរអ្នក', `DRWHO_${day}`), btn('⬅️ ត្រឡប់ក្រោយ', 'DRTYPE')] : [btn('⬅️ ត្រឡប់ក្រោយ', 'DRTYPE')],
       ],
     },
   };

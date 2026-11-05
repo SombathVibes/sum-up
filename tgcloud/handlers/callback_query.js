@@ -83,7 +83,8 @@ export default async function (query) {
    * whose they show by default; `canSwitch` (only the panel's own 📥, super
    * admins) lets a trailing _<who> (user code, or 'a' for everyone) pick
    * someone else under the login.
-   *   DRTYPE picks the report type (📋 per day or 💰 totals);
+   *   DRTYPE picks the report type (📋 per day or 💰 totals); DRNOW[_<who>]
+   *   and TOTNOW[_<who>] open each on today;
    *   DREPORT / DRWK_<page>[_<who>] pick a day, DREP_<day>[_<who>] shows it,
    *   DREP!_… fetches it again; TOT[_<who>] picks a period, TOT_D_ / TOT_W_ /
    *   TOT_M_…[_<who>] show it; DRWHO[_<day>] / TOTWHO pick whose, WHOSYNC
@@ -92,6 +93,9 @@ export default async function (query) {
   const lottery = async (key, { cfg, login, group, mine, canSwitch, refresh }) => {
     // Anyone else only for super admins in the private panel.
     const whoOf = async (tok) => (canSwitch && tokenSubject(tok) !== undefined ? subjectOf(cfg.loginId, tokenSubject(tok)) : mine);
+    // Today, worked out on the tap (a button may be from yesterday).
+    const now = /^(DRNOW|TOTNOW)(_(?:a|\d{1,20}))?$/.exec(key);
+    if (now) key = `${now[1] === 'DRNOW' ? 'DREP' : 'TOT_D'}_${dayKey(today())}${now[2] ?? ''}`;
     if (key === 'DRTYPE') return showScreen(typePicker(mine, { canSwitch }));
     if (/^(DRWHO|TOTWHO|WHOSYNC)/.test(key)) {
       if (!canSwitch) return showScreen(await dayPicker(cfg, mine));
@@ -104,9 +108,9 @@ export default async function (query) {
           note = `\n⚠️ ${String(e.message ?? e).slice(0, 200)}`;
         }
       }
-      if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 របាយការណ៍សរុប', target: (t) => `TOT_${t}`, back: 'DRTYPE', note }));
+      if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 របាយការណ៍សរុប', target: (t) => `TOTNOW_${t}`, back: 'DRTYPE', note }));
       const day = /^DRWHO_(\d{4}-\d\d-\d\d)$/.exec(key)?.[1];
-      return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRWK_0_${t}`), back: day ? `DREP_${day}` : 'DRTYPE', note }));
+      return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRNOW_${t}`), back: day ? `DREP_${day}` : 'DRTYPE', note }));
     }
     if (key === 'TOT' || key.startsWith('TOT_')) {
       const pick = /^TOT(?:_(a|\d{1,20}))?$/.exec(key);
@@ -370,7 +374,7 @@ const menu = ({ text, reply_markup }) => [text, { reply_markup }];
 const SLOW_MS = 1500;
 
 /** Buttons of the 📥 lottery report and its 💰 totals (see `lottery` in the handler). */
-const LOTTERY_KEY = /^(DRTYPE|DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/;
+const LOTTERY_KEY = /^(DRTYPE|DRNOW|TOTNOW|DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/;
 
 /** A failed catch-up still lets the report show what is stored. */
 async function catchUp(group) {

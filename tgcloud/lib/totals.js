@@ -158,6 +158,6 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
   return {
     text: lines.join('\n'),
     parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', `TOT_${subjectToken(who.key)}`), ...(canSwitch ? [btn('🔀 ប្តូរអ្នក', 'TOTWHO')] : [])], [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]] },
+    reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', `TOT_${subjectToken(who.key)}`), ...(canSwitch ? [btn('🔀 ប្តូរអ្នក', 'TOTWHO')] : [])], [btn('⬅️ ត្រឡប់ក្រោយ', 'DRTYPE')]] },
   };
 }
