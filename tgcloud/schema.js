@@ -31,6 +31,7 @@ export const subscriptions = table('subscriptions', {
   source:    text('source').notNull().default('manual'), // 'trial' | 'manual' | 'stars'
   // In the currency's smallest unit; for 'XTR' (Telegram Stars) that's Stars.
   price:     integer('price').notNull().default(0),
+  priceCents: integer('price_cents').deprecated('replaced by price + currency'),
   currency:  text('currency').notNull().default(''),
   isTrial:   boolean('is_trial').notNull().default(false),
   payerId:   integer('payer_id'),                // Stars: who paid
@@ -60,6 +61,10 @@ export const messages = table('messages', {
   // reads bot, currency, amount): answered from the index alone, without
   // touching the long original_message rows.
   report: index('idx_messages_report').on(t.groupId, t.date, t.botTgId, t.currency, t.amount),
+  // The newest Telegram message id in a group (the group's link on report
+  // titles in the private panel): read straight off the index, not by
+  // reading every payment of the group.
+  latest: index('idx_messages_tg').on(t.groupId, t.tgMessageId),
 }));
 
 // Small key/value settings changed from Telegram, e.g. 'payment_qr' (a photo file_id set with /setqr).
@@ -132,15 +137,15 @@ export const groupLotterySettings = table('group_lottery_settings', {
 
 // By-draw report snapshots, per login, day and subject (a member's or agent's
 // user code; '' = everyone under the login): the latest fetch, replaced on each
-// run except that a failed run keeps the last good one. slot is the 'HH:MM' it
-// last ran for. body is the reply cut to the fields shown (~4 KB); body2 the
-// 📤 សាង side, empty when off. Kept 7 days; older days are fetched again when picked.
+// run except that a failed run keeps the last good one. body is the reply cut
+// to the fields shown (~4 KB); body2 the 📤 សាង side, empty when off. Kept 7
+// days; older days are fetched again when picked.
 export const drawReports = table('draw_reports', {
   id:         integer('id').primaryKey({ autoIncrement: true }),
   loginId:    integer('login_id').notNull(),
   day:        text('day').notNull(), // 'YYYY-MM-DD', Phnom Penh
   subject:    text('subject').notNull().default(''),
-  slot:       text('slot').notNull().default(''),
+  slot:       text('slot').deprecated('never read; the run time is lottery_logins.ran_slot'),
   ranAt:      integer('ran_at').notNull(),
   ok:         boolean('ok').notNull().default(false),
   httpStatus: integer('http_status').notNull().default(0),

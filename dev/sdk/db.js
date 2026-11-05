@@ -71,6 +71,8 @@ class Column {
   }
   notNull() { this.mods.push('NOT NULL'); return this; }
   unique() { this.mods.push('UNIQUE'); return this; }
+  /** Marks the column for removal (terminal, as on the platform): invisible at runtime, dropped by open(). */
+  deprecated(reason = '') { this.deprecatedReason = reason || 'deprecated'; return this; }
   default(value) {
     const text = value instanceof Sql ? value.text : typeof value === 'string' ? `'${value.replace(/'/g, "''")}'` : String(toSqlValue(value));
     this.mods.push(`DEFAULT ${text}`);
@@ -105,7 +107,10 @@ const TABLE = Symbol('table');
 
 export function table(name, columns, extras) {
   for (const [key, col] of Object.entries(columns)) col.name ??= key;
-  const t = { ...columns, [TABLE]: { name, columns, indexes: extras ? Object.values(extras(columns)) : [] } };
+  // Deprecated columns are left out at runtime and dropped by open().
+  const live = Object.fromEntries(Object.entries(columns).filter(([, c]) => !c.deprecatedReason));
+  const dropped = Object.values(columns).filter((c) => c.deprecatedReason);
+  const t = { ...live, [TABLE]: { name, columns: live, dropped, indexes: extras ? Object.values(extras(live)) : [] } };
   return t;
 }
 
@@ -140,11 +145,31 @@ export function open(file, schema) {
       sqlite.exec(`ALTER TABLE ${quote(t[TABLE].name)} ADD COLUMN ${[quote(col.name), col.type, ...mods].join(' ')}`);
       console.log(`  added column ${t[TABLE].name}.${col.name}`);
     }
-    // SQLite can't ADD COLUMN ... UNIQUE, so unique columns get a unique index (created either way, harmless).
+    // Columns marked .deprecated() are dropped (the platform's migrate shows them first).
+    for (const col of t[TABLE].dropped) {
+      if (!existing.has(col.name)) continue;
+      sqlite.exec(`ALTER TABLE ${quote(t[TABLE].name)} DROP COLUMN ${quote(col.name)}`);
+      console.log(`  dropped column ${t[TABLE].name}.${col.name} (${col.deprecatedReason})`);
+    }
+    // SQLite can't ADD COLUMN ... UNIQUE, so a unique column added later gets a
+    // unique index uq_<table>_<column>; one created with the table already has
+    // SQLite's own, so a second one would only duplicate it (and is dropped).
+    const singleUnique = (skip) => new Set(sqlite.prepare(`PRAGMA index_list(${quote(t[TABLE].name)})`).all()
+      .filter((i) => i.unique && i.name !== skip)
+      .map((i) => sqlite.prepare(`PRAGMA index_info(${quote(i.name)})`).all())
+      .filter((cols) => cols.length === 1)
+      .map((cols) => cols[0].name));
     for (const col of Object.values(t[TABLE].columns)) {
-      if (col.mods.includes('UNIQUE')) {
-        sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ${quote(`uq_${t[TABLE].name}_${col.name}`)} ON ${quote(t[TABLE].name)} (${quote(col.name)})`);
+      if (!col.mods.includes('UNIQUE')) continue;
+      const own = `uq_${t[TABLE].name}_${col.name}`;
+      if (singleUnique(own).has(col.name)) {
+        if (sqlite.prepare(`PRAGMA index_list(${quote(t[TABLE].name)})`).all().some((i) => i.name === own)) {
+          sqlite.exec(`DROP INDEX ${quote(own)}`);
+          console.log(`  dropped index ${own} (duplicate of the column's own unique index)`);
+        }
+        continue;
       }
+      sqlite.exec(`CREATE UNIQUE INDEX IF NOT EXISTS ${quote(own)} ON ${quote(t[TABLE].name)} (${quote(col.name)})`);
     }
     // Indexes no longer in schema.js are dropped (the platform's migrate asks first).
     const wanted = new Set(t[TABLE].indexes.map((i) => i.name));

@@ -9,13 +9,11 @@
 // /dailyrun at the logins' times.
 
 import { db } from 'sdk';
-import { and, desc, eq, gte, lt, lte } from 'sdk/db';
+import { and, eq, gte, lt, lte } from 'sdk/db';
 import { agents, drawReports, groupLotterySettings } from '../schema.js';
 import { addDays, dayKey, formatTime, now, pad2, parseDayKey, today } from './dates.js';
-import { getLogin, loginUser, nowHHMM, openSession, REPORT_PATH, replyReason } from './logins.js';
+import { getLogin, loginUser, openSession, REPORT_PATH, replyReason } from './logins.js';
 import { col, Doc, time } from './rich.js';
-
-export { nowHHMM };
 
 const OFFSET = 7 * 3600; // Phnom Penh, UTC+7
 const MAX_BODY = 300_000; // replies that aren't the lottery shape are kept cut
@@ -66,9 +64,6 @@ export const dropLoginFromGroups = (loginId) => db.update(groupLotterySettings)
   .set({ enabled: false, loginId: 0 }).where(eq(groupLotterySettings.loginId, loginId)).run();
 
 // ---------------------------------------------------------------- saved reports
-export const reportHistory = (loginId, limit = 30) => db.select().from(drawReports)
-  .where(eq(drawReports.loginId, loginId)).orderBy(desc(drawReports.day)).limit(limit).all();
-
 /** One day's saved report ('YYYY-MM-DD') for a subject ('' = everyone), or undefined. */
 export const reportForDay = (loginId, day, subject = '') => db.select().from(drawReports)
   .where(and(eq(drawReports.loginId, loginId), eq(drawReports.day, day), eq(drawReports.subject, subject))).get();
@@ -154,12 +149,11 @@ export function reportUrl(login, day, subject, send = false) {
 /**
  * Fetches a subject's by-draw report for a day with a login (getLogin with
  * secret; `request`: a session to share, else one is opened), and 📤 សាង when
- * the login has it on, and saves it under `slot` ('HH:MM'; default: this
- * minute). A failed fetch keeps the last good report. Returns the row, with
+ * the login has it on, and saves it. A failed fetch keeps the last good report. Returns the row, with
  * `who` (the subject, filled in from the login for everyone).
  */
-export async function fetchReport(login, day, who, { slot = nowHHMM(), request } = {}) {
-  const row = { loginId: login.id, day, subject: who.key, slot, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null, body2: '', error2: null };
+export async function fetchReport(login, day, who, { request } = {}) {
+  const row = { loginId: login.id, day, subject: who.key, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null, body2: '', error2: null };
   const controller = request ? null : new AbortController();
   const timer = controller && setTimeout(() => controller.abort(), TIMEOUT_MS);
   request ??= openSession(login, controller.signal);
@@ -194,13 +188,11 @@ const failure = (e) => (e?.name === 'AbortError' ? `No answer in ${TIMEOUT_MS / 
 
 /**
  * Saves a fetched report: one row per login, day and subject, replaced; but a
- * failed fetch keeps the last good report (only noting the time it ran for).
+ * failed fetch keeps the last good report.
  */
 async function saveReport(row) {
   const saved = !row.ok && (await reportForDay(row.loginId, row.day, row.subject));
-  if (saved?.ok) {
-    await db.update(drawReports).set({ slot: row.slot }).where(eq(drawReports.id, saved.id)).run();
-  } else {
+  if (!saved?.ok) {
     const { loginId: _l, day: _d, subject: _s, ...set } = row;
     await db.insert(drawReports).values(row)
       .onConflictDoUpdate({ target: [drawReports.loginId, drawReports.day, drawReports.subject], set })
@@ -218,7 +210,7 @@ async function saveReport(row) {
  * { refresh: true } when the reply has one with bets it doesn't know.
  * Returns { count (users saved), error, data (the first reply, parsed, or null) }.
  */
-export async function fetchLevelReports(login, day, level, people, { slot = nowHHMM(), request } = {}) {
+export async function fetchLevelReports(login, day, level, people, { request } = {}) {
   request ??= openSession(login);
   const get = async (send) => {
     const q = new URLSearchParams({ filterByReportType: 'ONE', filterByDate: day, filterByLevel: level });
@@ -241,7 +233,7 @@ export async function fetchLevelReports(login, day, level, people, { slot = nowH
   if (betting.some((u) => u && !names.has(u))) list = await people({ refresh: true });
   for (const m of list) {
     await saveReport({
-      loginId: login.id, day, subject: m.userCode, slot, ranAt: now(),
+      loginId: login.id, day, subject: m.userCode, ranAt: now(),
       ok: !first.error, httpStatus: first.status, body: first.data ? memberBody(first.data, m.username) : '', error: first.error ?? null,
       body2: second?.data ? memberBody(second.data, m.username) : '', error2: second?.error ?? null,
     });
@@ -529,7 +521,6 @@ export function formatReport(group, row, prev = null, who = null) {
   doc.line(`<pre>${escape(body || '—')}</pre>`);
   return foot();
 }
-
 
 // style (Bot API 9.4): 'primary' (blue), 'success' (green) or 'danger' (red).
 const btn = (text, callback_data, style) => ({ text, callback_data, ...(style ? { style } : {}) });

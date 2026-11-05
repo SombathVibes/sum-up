@@ -40,16 +40,16 @@ async function membersOfLogin(login, opts) {
 }
 
 /**
- * One run of a login (with secret) for `slot`: { reports, members, agents, totalsError }.
+ * One run of a login (with secret) for `day`: { reports, members, agents, totalsError }.
  * reports: everyone's row, then the members groups follow (from the split);
  * members / agents: { count, error } for the member- and agent-level reports.
  */
-export async function runLogin(login, slot = nowHHMM(), day = dayKey(today())) {
+export async function runLogin(login, day = dayKey(today())) {
   const request = openSession(login);
-  const reports = [await fetchReport(login, day, await subjectOf(login.id, ''), { slot, request })];
+  const reports = [await fetchReport(login, day, await subjectOf(login.id, ''), { request })];
   let members;
   try {
-    const { count, error } = await fetchMemberReports(login, day, (o) => membersOfLogin(login, o), { slot, request });
+    const { count, error } = await fetchMemberReports(login, day, (o) => membersOfLogin(login, o), { request });
     members = { count, error };
   } catch (e) {
     members = { count: 0, error: e.message };
@@ -66,7 +66,7 @@ export async function runLogin(login, slot = nowHHMM(), day = dayKey(today())) {
   }
   let agents;
   try {
-    agents = await fetchLevelReports(login, day, 'agent', (o) => agentsOfLogin(login, o), { slot, request });
+    agents = await fetchLevelReports(login, day, 'agent', (o) => agentsOfLogin(login, o), { request });
   } catch (e) {
     agents = { count: 0, error: e.message, data: null };
   }
@@ -90,7 +90,7 @@ export async function runDue() {
     const slot = login.times.filter((t) => t <= hhmm).at(-1);
     if (!slot || (login.ranDay === day && login.ranSlot >= slot)) continue;
     await markRan(login.id, day, slot);
-    done.push({ login, ...(await runLogin(login, slot, day)) });
+    done.push({ login, ...(await runLogin(login, day)) });
   }
   return done;
 }
