@@ -489,7 +489,7 @@ export async function agentListScreen(login, { refresh = false } = {}) {
       note = `\n⚠️ ${e.message}`;
     }
   }
-  const rows = list.map((a) => [btn(`👤 ${a.username}${a.nickname ? ` · ${a.nickname}` : ''}`, `XLA_${a.id}`)]);
+  const rows = list.map((a) => [btn(`👤 ${a.username}`, `XLA_${a.id}`)]);
   rows.push([btn('🔄 ទាញបញ្ជីថ្មី', 'XLSYNC'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
   return {
     text: `<b>📊 Excel ភ្នាក់ងារ</b>\n${list.length ? 'ជ្រើសរើសភ្នាក់ងារ:' : 'មិនមានភ្នាក់ងារ។'}${note}`,
@@ -503,7 +503,7 @@ export function monthScreen(agent) {
   const { y, m } = today();
   const months = [0, 1, 2].map((i) => new Date(Date.UTC(y, m - 1 - i, 1)).toISOString().slice(0, 7));
   return {
-    text: `<b>📊 ${agent.username}</b>${agent.nickname ? ` · ${agent.nickname}` : ''}\nជ្រើសរើសខែ:`,
+    text: `<b>📊 ${agent.username}</b>\nជ្រើសរើសខែ:`,
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
