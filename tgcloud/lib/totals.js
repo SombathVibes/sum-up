@@ -143,10 +143,10 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
     }
     // A week or month: the days, folded.
     if (p.kind !== 'day') {
-      // Day, bet, payout (សង) and win/lose, like the by-draw report's table.
+      // Day of the month, bet, payout (សង) and win/lose, like the by-draw report's table.
       const line = (a, b, c, d) => `${String(a).padEnd(6)}${String(b).padStart(10)}${String(c).padStart(10)}${String(d).padStart(10)}`;
       const rule = '─'.repeat(36);
-      const rows = cur.perDay.filter((d) => d.report || d.send).map((d) => line(dm(d.day), riel(d.report?.commissionKhr), riel(d.report?.rewardAmountKhr), riel(d.report?.winLoseAmountKhr)));
+      const rows = cur.perDay.filter((d) => d.report || d.send).map((d) => line(d.day.slice(8, 10), riel(d.report?.commissionKhr), riel(d.report?.rewardAmountKhr), riel(d.report?.winLoseAmountKhr)));
       if (rows.length) {
         lines.push('', `<blockquote expandable><pre>${escape([line('Day', 'Bet', 'Reward', 'W/L'), rule, ...rows, rule, line('Total', riel(r.commissionKhr), riel(r.rewardAmountKhr), riel(r.winLoseAmountKhr))].join('\n'))}</pre></blockquote>`);
       }
