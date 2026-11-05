@@ -428,8 +428,8 @@ function formatLottery(data, prevWl = null, data2 = null) {
   const share = lotteries[0].summary;
   doc.bold(profit(total.wl)).line(`ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`);
   if (total.usd) doc.line(`💵 USD: $${total.usd.toFixed(2)}`);
-  // The user/company split, just above the comparison with the day before.
-  doc.line(`👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`);
+  // The user/company split, after a blank line, just above the comparison with the day before.
+  doc.gap().line(`👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`);
   if (prevWl) {
     const pct = Math.round(((total.wl - prevWl) / Math.abs(prevWl)) * 100);
     doc.line(`ធៀបម្សិលមិញ (៛${riel(prevWl)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
