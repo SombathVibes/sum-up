@@ -110,10 +110,20 @@ export default async function (query) {
       const pick = /^TOT(?:_(a|\d{1,20}))?$/.exec(key);
       if (pick) return showScreen(totalsPicker(await whoOf(pick[1]), { canSwitch }));
       const who = await whoOf(/_(a|\d{1,20})$/.exec(key)?.[1]);
-      await show('⏳ កំពុងគណនា…');
+      // Saved days answer at once: then it's one edit, like the by-draw report.
+      // Only when days have to be fetched does '⏳' show meanwhile.
+      let waiting = null;
+      const slow = setTimeout(() => { waiting = show('⏳ កំពុងគណនា…').catch(() => {}); }, SLOW_MS);
+      const settle = async () => {
+        clearTimeout(slow);
+        await waiting; // the '⏳' edit must land before the answer, not after
+      };
       try {
-        return showScreen(await totalsScreen(group, login, who, key, { refresh, canSwitch }));
+        const screen = await totalsScreen(group, login, who, key, { refresh, canSwitch });
+        await settle();
+        return showScreen(screen);
       } catch (e) {
+        await settle();
         console.error('totals failed', e);
         return show(`⚠️ ${String(e.message ?? e).slice(0, 300)}`, { reply_markup: { inline_keyboard: [[{ text: '🔄 ម្ដងទៀត', callback_data: key }], [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'TOT' }]] } });
       }
@@ -353,6 +363,9 @@ export default async function (query) {
 }
 
 const menu = ({ text, reply_markup }) => [text, { reply_markup }];
+
+/** How long 💰 totals may take before '⏳' shows (they fetch missing days). */
+const SLOW_MS = 1500;
 
 /** Buttons of the 📥 lottery report and its 💰 totals (see `lottery` in the handler). */
 const LOTTERY_KEY = /^(DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/;
