@@ -279,9 +279,9 @@ export const REPORT_NAME = 'របាយការណ៍ឆ្នោត';
 const riel = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
 
 /**
- * Phnom Penh 12-hour '04:30' (no AM/PM) from drawAtPP ('2026-11-04 16:30:00')
- * or drawAt (UTC ISO): short, so a phone's table keeps room for amounts in
- * millions. The draws run from the morning to the evening, so the order of
+ * Phnom Penh 12-hour '4:30' (no AM/PM, no leading zero) from drawAtPP
+ * ('2026-11-04 16:30:00') or drawAt (UTC ISO): as short as it gets, so a
+ * phone's table keeps room for amounts in millions. The draws run from the morning to the evening, so the order of
  * the rows tells morning from afternoon.
  */
 function drawTime(item) {
@@ -295,7 +295,7 @@ function drawTime(item) {
     const d = new Date(t + OFFSET * 1000);
     [h, m] = [d.getUTCHours(), pad2(d.getUTCMinutes())];
   }
-  return `${pad2(h % 12 || 12)}:${m}`;
+  return `${h % 12 || 12}:${m}`;
 }
 
 const pickKeys = (o, keys) => Object.fromEntries(keys.filter((k) => o?.[k] !== undefined).map((k) => [k, o[k]]));
@@ -435,7 +435,8 @@ function formatLottery(data, prevWl = null, data2 = null) {
 }
 
 // A lottery's draws: Phnom Penh time, bet, payout, win/lose.
-const DRAW_COLS = [col('ម៉ោង', 'Time', 6), col('ចាក់', 'Bet', 10), col('សង', 'Reward', 10), col('ចំណេញ', 'W/L', 10)];
+// The time column is as narrow as it can be: a clock for its heading.
+const DRAW_COLS = [col('🕘', 'Time', 6), col('ចាក់', 'Bet', 10), col('សង', 'Reward', 10), col('ចំណេញ', 'W/L', 10)];
 
 /** Per lottery: its result, then its draws in a folded table. */
 function lotterySections(doc, lotteries) {
