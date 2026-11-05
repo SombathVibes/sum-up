@@ -435,8 +435,8 @@ function formatLottery(data, prevWl = null, data2 = null) {
 }
 
 // A lottery's draws: Phnom Penh time, bet, payout, win/lose.
-// The time column is as narrow as it can be: a clock for its heading.
-const DRAW_COLS = [col('🕘', 'Time', 6), col('ចាក់', 'Bet', 10), col('សង', 'Reward', 10), col('ចំណេញ', 'W/L', 10)];
+// The time column is kept narrow: times without AM/PM or a leading zero.
+const DRAW_COLS = [col('ម៉ោង', 'Time', 6), col('ចាក់', 'Bet', 10), col('សង', 'Reward', 10), col('ចំណេញ', 'W/L', 10)];
 
 /** Per lottery: its result, then its draws in a folded table. */
 function lotterySections(doc, lotteries) {
