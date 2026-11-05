@@ -13,7 +13,7 @@ import { listLogins, pushSchedule } from '../lib/logins.js';
 import { runDue } from '../lib/schedule.js';
 import { forwardReceipt, isReceipt } from '../lib/receipts.js';
 import { parseAmount } from '../lib/parse.js';
-import { getGroup, hasActiveSubscription, listGroups, saveMessages, setSetting } from '../lib/store.js';
+import { getGroup, hasActiveSubscription, listGroups, saveMessages, setSetting, upsertGroup } from '../lib/store.js';
 import { addAdmin, canManage, isSuper, roleIn } from '../lib/roles.js';
 import { parseCommand, sendScreen, sendSupport } from '../lib/telegram.js';
 import { menuKeyboard, menuText, syncMenu } from '../lib/ui.js';
@@ -30,8 +30,10 @@ export default async function (message) {
   // 🧾 A transfer receipt sent as a reply to the bot's request (⭐ ការជាវ → 💬):
   // copied to the admins with one-tap renew buttons (lib/receipts.js).
   if (inGroup && (await isReceipt(message))) {
-    const group = await getGroup(chatId);
-    if (group) await forwardReceipt(message, group);
+    // A group that isn't registered yet (its /menu shows only ⭐ ការជាវ) is
+    // registered now, with no trial, as a Stars payment would; ✅ then starts it from today.
+    const group = (await getGroup(chatId)) ?? (await upsertGroup(chatId, message.chat.title ?? null, { trial: false }));
+    await forwardReceipt(message, group);
     return;
   }
 

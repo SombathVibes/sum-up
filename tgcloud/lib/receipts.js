@@ -37,16 +37,15 @@ export function askForReceipt(chatId) {
 /** Is this group message a receipt: a photo (or image file) replying to the bot's request? */
 export async function isReceipt(message) {
   const asked = message.reply_to_message;
-  if (!asked || !(asked.text ?? '').startsWith(RECEIPT_ASK)) return false;
-  if (!message.photo && !message.document?.mime_type?.startsWith('image/')) return false;
-  return asked.from?.id === (await getMe()).id;
+  const image = !!(message.photo || message.document?.mime_type?.startsWith('image/'));
+  return image && !!asked && (asked.text ?? '').startsWith(RECEIPT_ASK) && asked.from?.id === (await getMe()).id;
 }
 
 /** Copies a receipt to the super admins and the group's managers, with the buttons. */
 export async function forwardReceipt(message, group) {
   const pay = await paymentSettings();
   const latest = await latestSubscription(group.id);
-  const end = latest ? formatKhmerDate(dayOf(latest.endDate)) : '—';
+  const end = latest ? formatKhmerDate(dayOf(latest.endDate)) : '🆕 ក្រុមថ្មី (មិនទាន់ធ្លាប់ជាវ)';
   const caption = [
     `🧾 <b>វិក្កយបត្រ · 🏪 ${esc(group.name ?? group.tgId)}</b>`,
     `👤 ${esc(nameOf(message.from))}`,
