@@ -278,7 +278,11 @@ export const REPORT_NAME = 'របាយការណ៍ឆ្នោត';
 
 const riel = (n) => Math.round(Number(n) || 0).toLocaleString('en-US');
 
-/** Phnom Penh '08:30 AM' from drawAtPP ('2026-11-04 08:30:00') or drawAt (UTC ISO). */
+/**
+ * Phnom Penh '08:30 AM' from drawAtPP ('2026-11-04 08:30:00') or drawAt (UTC
+ * ISO). The space is a no-break space, so a narrow table cell (rich reports
+ * on a phone) never splits the time from its AM/PM.
+ */
 function drawTime(item) {
   let h;
   let m;
@@ -290,7 +294,7 @@ function drawTime(item) {
     const d = new Date(t + OFFSET * 1000);
     [h, m] = [d.getUTCHours(), pad2(d.getUTCMinutes())];
   }
-  return `${pad2(h % 12 || 12)}:${m} ${h >= 12 ? 'PM' : 'AM'}`;
+  return `${pad2(h % 12 || 12)}:${m} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
 const pickKeys = (o, keys) => Object.fromEntries(keys.filter((k) => o?.[k] !== undefined).map((k) => [k, o[k]]));
