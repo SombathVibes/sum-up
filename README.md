@@ -54,7 +54,7 @@ A web app inside Telegram for admins (`webapp/`, Vite + React), hosted by Telegr
 
 ## 📥 Lottery report (per group, off by default)
 
-A report the bot fetches from another API on a schedule, shown in the group as **📥 របាយការណ៍ឆ្នោត**. A super admin switches it on per group in the Mini App (group → **📥 ឆ្នោត**) and sets:
+A report the bot fetches from another API on a schedule, shown in the group as **📥 របាយការណ៍ឆ្នោត**. A super admin switches it on per group in the Mini App (group → **📥 ឆ្នោត**) and sets, in order: ① Login and headers, ② URLs (**📋** fills both lottery URLs from the login URL, with `{member}`, `{date}` and `{level}`; a URL with a user code typed in is flagged, with a one-tap fix), ③ who: the agents and members found under the login (🔄 refreshes them) and the ⭐ default, ④ times, ⑤ post to group. **🧪** test-runs for the default, everyone, an agent or any member; the recent results show whose each one is.
 
 - **URL:** what the bot calls. `{date}` becomes the day (`YYYY-MM-DD`, Phnom Penh) and `{group}` the group's Telegram id, e.g. `https://example.com/report?date={date}&shop={group}`.
 - **Second URL** (optional): fetched on every run right after the first, with the same login and headers, and saved in the same snapshot (`body2`), e.g. the same report with `&isSend=true`. For the lottery report it's shown at the bottom as **📤 សាង** (its result, bet and payout, and its lotteries), on days it has draws.

@@ -1,8 +1,10 @@
-// A group's Daily report (super admins), in three steps: the URL to call (and
-// a sign-in, if the API needs one), when
-// to call it (once a day, every few hours, or hand-picked times, Phnom Penh),
-// and whether to post the result in the group. Then a test run and the recent
-// reports the bot saved (one per time).
+// A group's lottery report (super admins), in five steps: the sign-in (and
+// extra headers), the URLs to call (📋 fills the lottery API's from the login
+// URL), whose report is the default (everyone under the login, or one member;
+// the agents and members found under the login are listed), when to call it
+// (once a day, every few hours, or hand-picked times, Phnom Penh), and whether
+// to post the result in the group. Then a test run for anyone, and the recent
+// reports the bot saved (one per day and person).
 
 import { useEffect, useState } from 'react';
 import { call } from '../api.js';
@@ -21,6 +23,13 @@ const FIELD_ERRORS = {
   basicAuth: 'សូមដាក់ Basic auth (តម្លៃដែលបានបង្កើត)',
   headers: 'Header ត្រូវតែជា «Name: value» មួយបន្ទាត់ម្ដង',
 };
+/** The lottery API's base ('…/api/v1.0.0') from a login URL, or null. */
+const apiBase = (loginUrl) => /^(https?:\/\/.+?\/api\/v[\d.]+)\//.exec(loginUrl ?? '')?.[1] ?? null;
+const lotteryUrl = (base) => `${base}/report/daily-report/all?filterByUserCode={member}&filterByReportType=ONE&filterByDate={date}&filterByLevel={level}`;
+/** A user code typed into a URL instead of {member}. */
+const FIXED_CODE = /filterByUserCode=\d+/;
+const unfix = (url) => url.replace(FIXED_CODE, 'filterByUserCode={member}');
+
 const KH_DIGITS = '០១២៣៤៥៦៧៨៩';
 const kh = (n) => String(n).replace(/\d/g, (d) => KH_DIGITS[d]);
 const hh = (h) => `${String(h).padStart(2, '0')}:00`;
@@ -70,14 +79,18 @@ export default function DailyPanel({ group }) {
   const [error, setError] = useState(null);
   const [note, setNote] = useState(null);
   const [busy, setBusy] = useState(null);
-  const [openKey, setOpenKey] = useState(null); // `${day} ${slot}`
+  const [openKey, setOpenKey] = useState(null); // `${day} ${subject}`
   const [showPw, setShowPw] = useState(false);
-  const [members, setMembers] = useState(null); // [{ agentCode, agent, members: [{ username, userCode, nickname }] }]
-  const [membersError, setMembersError] = useState(null);
-  const loadMembers = () => {
-    setMembersError(null);
-    setMembers('loading');
-    call('dailyMembers', { groupId: group.tgId }).then((r) => setMembers(r.agents), (e) => { setMembers(null); setMembersError(e.message); });
+  const [people, setPeople] = useState([]); // [{ agentCode, agent, agentNick, members: [{ username, userCode, nickname }] }]
+  const [peopleBusy, setPeopleBusy] = useState(false);
+  const [peopleError, setPeopleError] = useState(null);
+  const [testWho, setTestWho] = useState('default'); // 'default' | '' (everyone) | a user code
+  const loadPeople = () => {
+    setPeopleError(null);
+    setPeopleBusy(true);
+    call('dailyMembers', { groupId: group.tgId })
+      .then((r) => setPeople(r.agents), (e) => setPeopleError(e.message))
+      .finally(() => setPeopleBusy(false));
   };
 
   // The password is write-only: the form starts empty and the server only says hasPassword.
@@ -87,7 +100,7 @@ export default function DailyPanel({ group }) {
     setMode(m.mode);
     if (m.span) setSpan(m.span);
   };
-  const load = () => call('dailyGet', { groupId: group.tgId }).then((r) => { setData(r); fill(r.config); }, setError);
+  const load = () => call('dailyGet', { groupId: group.tgId }).then((r) => { setData(r); setPeople(r.people ?? []); fill(r.config); }, setError);
   useEffect(() => { load(); }, [group.tgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error && !data) return <main className="content"><p className="error">{error.message}</p></main>;
@@ -96,6 +109,9 @@ export default function DailyPanel({ group }) {
   const set = (patch) => { setForm({ ...form, ...patch }); setNote(null); setError(null); };
   const dirty = JSON.stringify(form) !== JSON.stringify({ ...data.config, password: '', useBasic: data.config.hasBasicAuth });
   const saved = data.config;
+  const base = form.authType === 'login' ? apiBase(form.loginUrl) : null;
+  const memberCount = people.reduce((n, a) => n + a.members.length, 0);
+  const savedLogin = saved.authType === 'login';
 
   const pickMode = (m) => {
     setMode(m);
@@ -110,6 +126,10 @@ export default function DailyPanel({ group }) {
   };
   const addTime = () => !form.times.includes(newTime) && set({ times: [...form.times, newTime].sort() });
   const insert = (token) => set({ url: form.url + token });
+  const pickDefault = (code) => {
+    const hit = people.flatMap((a) => a.members.map((m) => ({ ...m, agentCode: a.agentCode }))).find((m) => m.userCode === code);
+    set({ memberCode: code, memberName: hit?.username ?? '', agentCode: hit?.agentCode ?? '' });
+  };
 
   const save = () => {
     setBusy('save');
@@ -121,10 +141,10 @@ export default function DailyPanel({ group }) {
   const run = (post) => {
     setBusy(post ? 'post' : 'test');
     setError(null);
-    call('dailyRun', { groupId: group.tgId, post })
+    call('dailyRun', { groupId: group.tgId, post, ...(testWho !== 'default' && { subject: testWho }) })
       .then((r) => {
         setNote(r.ok ? `✅ ជោគជ័យ (HTTP ${r.httpStatus})${post && saved.postToGroup ? ' · បានផ្ញើទៅក្រុម' : ''}` : `⚠️ ${r.error}`);
-        setOpenKey(`${r.day} ${r.slot}`);
+        setOpenKey(`${r.day} ${r.subject}`);
         return load();
       })
       .catch(setError)
@@ -132,6 +152,9 @@ export default function DailyPanel({ group }) {
   };
 
   const status = !saved.enabled ? '⏸ បិទ' : `✅ បើក · ${kh(saved.times.length)} ដង/ថ្ងៃ · បន្ទាប់: ${nextRun(saved.times)}`;
+  const fixed = [form.url, form.url2].some((u) => FIXED_CODE.test(u));
+  const memberLabel = (m) => `${m.username}${m.nickname ? ` · ${m.nickname}` : ''}`;
+  const agentLabel = (a) => `${a.agent}${a.agentNick ? ` · ${a.agentNick}` : ''}`;
 
   return (
     <main className="content daily">
@@ -146,59 +169,9 @@ export default function DailyPanel({ group }) {
       </section>
 
       <section className="card">
-        <div className="step"><span>1</span> URL ដែលត្រូវហៅ</div>
-        <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          placeholder="https://example.com/report?date={date}" value={form.url} onChange={(e) => set({ url: e.target.value })} />
-        <div className="chips">
-          <button className="chip" onClick={() => insert('{date}')}>+ {'{date}'} <span className="muted">ថ្ងៃ</span></button>
-          <button className="chip" onClick={() => insert('{group}')}>+ {'{group}'} <span className="muted">ID ក្រុម</span></button>
-          <button className="chip" onClick={() => insert('{member}')}>+ {'{member}'} <span className="muted">អ្នកដែលកំពុងមើល</span></button>
-        </div>
-
-        <div className="label">
-          <span className="muted small">👤 លំនាំដើម (ស្រេចចិត្ត) · ការហៅតាមម៉ោង និងពេលបើកដំបូង · មិនកំណត់ = 👥 ទាំងអស់។ ក្នុង bot អាចប្តូរមើលសមាជិក / ភ្នាក់ងារផ្សេងបាន 🔀</span>
-          {Array.isArray(members) ? (
-            <select className="field" value={form.memberCode}
-              onChange={(e) => {
-                const code = e.target.value;
-                const hit = members.flatMap((a) => a.members.map((m) => ({ ...m, agentCode: a.agentCode }))).find((m) => m.userCode === code);
-                set({ memberCode: code, memberName: hit?.username ?? '', agentCode: hit?.agentCode ?? '' });
-              }}>
-              <option value="">👥 ទាំងអស់ (មិនកំណត់)</option>
-              {members.map((a) => (
-                <optgroup key={a.agentCode} label={`${a.agent}${a.agentNick ? ` · ${a.agentNick}` : ''}`}>
-                  {a.members.map((m) => <option key={m.userCode} value={m.userCode}>{m.username}{m.nickname ? ` · ${m.nickname}` : ''}</option>)}
-                </optgroup>
-              ))}
-            </select>
-          ) : (
-            <div className="row">
-              <span className="grow small">{form.memberCode ? `${form.memberName || form.memberCode}` : <span className="muted">👥 ទាំងអស់</span>}</span>
-              <button type="button" className="btn small" disabled={members === 'loading' || form.authType !== 'login'} onClick={loadMembers}>
-                {members === 'loading' ? 'កំពុងទាញ…' : form.memberCode ? '🔄 ប្តូរ' : '👤 ជ្រើសរើស'}
-              </button>
-            </div>
-          )}
-          {form.authType !== 'login' && <span className="muted small">ត្រូវបើក 🔐 Login ហើយរក្សាទុកជាមុន។</span>}
-          {membersError && <span className="small error">⚠️ {membersError}</span>}
-        </div>
-        <label className="label">
-          <span className="muted small">URL ទី២ (ស្រេចចិត្ត) · ហៅរាល់ពេលជាមួយ URL ទី១ ហើយរក្សាទុកទាំងពីរ</span>
-          <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            placeholder="https://example.com/report?date={date}&isSend=true" value={form.url2} onChange={(e) => set({ url2: e.target.value })} />
-          {form.url && !form.url2 && (
-            <button type="button" className="chip" onClick={() => set({ url2: `${form.url}${form.url.includes('?') ? '&' : '?'}isSend=true` })}>+ ចម្លង URL ទី១ + isSend=true</button>
-          )}
-        </label>
-
-        <label className="label">
-          <span className="muted small">Header បន្ថែម (Login និង URL) · មួយបន្ទាត់ម្ដង «Name: value»</span>
-          <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            placeholder="X-Platform: web" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
-        </label>
-        <div className="row divided">
+        <div className="row">
           <div className="grow">
-            <div className="small">🔐 ត្រូវការ Login</div>
+            <div className="step"><span>1</span> 🔐 Login</div>
             <div className="muted small">{form.authType === 'login' ? 'Login មុន រួចហៅ URL ជាមួយ token' : 'API មិនត្រូវការ Login'}</div>
           </div>
           <Switch on={form.authType === 'login'} onChange={(on) => set({ authType: on ? 'login' : 'none' })} label="Login" />
@@ -208,7 +181,7 @@ export default function DailyPanel({ group }) {
             <label className="label">
               <span className="muted small">Login URL (POST)</span>
               <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                placeholder="https://example.com/api/auth/login" value={form.loginUrl} onChange={(e) => set({ loginUrl: e.target.value })} />
+                placeholder="https://example.com/api/v1.0.0/auth/login" value={form.loginUrl} onChange={(e) => set({ loginUrl: e.target.value })} />
             </label>
             <label className="label">
               <span className="muted small">Username</span>
@@ -247,10 +220,87 @@ export default function DailyPanel({ group }) {
             </details>
           </div>
         )}
+        <label className="label">
+          <span className="muted small">Header បន្ថែម (Login និង URL) · មួយបន្ទាត់ម្ដង «Name: value»</span>
+          <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            placeholder="platformtype: p99l" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
+        </label>
       </section>
 
       <section className="card">
-        <div className="step"><span>2</span> ពេលណា <span className="muted small">(ម៉ោងភ្នំពេញ)</span></div>
+        <div className="step"><span>2</span> URL ដែលត្រូវហៅ</div>
+        {base && (
+          <button type="button" className="btn small" onClick={() => set({ url: lotteryUrl(base), url2: `${lotteryUrl(base)}&isSend=true` })}>
+            📋 ប្រើ URL ឆ្នោត (ទាំងពីរ) ពី Login URL
+          </button>
+        )}
+        <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          placeholder="https://example.com/report?date={date}" value={form.url} onChange={(e) => set({ url: e.target.value })} />
+        <div className="chips">
+          <button className="chip" onClick={() => insert('{date}')}>+ {'{date}'} <span className="muted">ថ្ងៃ</span></button>
+          <button className="chip" onClick={() => insert('{member}')}>+ {'{member}'} <span className="muted">លេខកូដអ្នក</span></button>
+          <button className="chip" onClick={() => insert('{level}')}>+ {'{level}'} <span className="muted">កម្រិត</span></button>
+          <button className="chip" onClick={() => insert('{group}')}>+ {'{group}'} <span className="muted">ID ក្រុម</span></button>
+        </div>
+        <label className="label">
+          <span className="muted small">URL ទី២ (ស្រេចចិត្ត) · ឧ. isSend=true សម្រាប់ 📤 សាង</span>
+          <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            placeholder="https://example.com/report?date={date}&isSend=true" value={form.url2} onChange={(e) => set({ url2: e.target.value })} />
+          {form.url && !form.url2 && (
+            <button type="button" className="chip" onClick={() => set({ url2: `${form.url}${form.url.includes('?') ? '&' : '?'}isSend=true` })}>+ ចម្លង URL ទី១ + isSend=true</button>
+          )}
+        </label>
+        {fixed && (
+          <div className="row warn">
+            <span className="grow small">⚠️ URL មានលេខកូដសរសេរជាប់ (filterByUserCode=…)។ ប្រើ {'{member}'} ដើម្បីឲ្យប្តូរតាមអ្នកដែលជ្រើស។</span>
+            <button type="button" className="btn small" onClick={() => set({ url: unfix(form.url), url2: unfix(form.url2) })}>ជួសជុល</button>
+          </div>
+        )}
+      </section>
+
+      <section className="card">
+        <div className="row">
+          <div className="grow">
+            <div className="step"><span>3</span> អ្នកណា</div>
+            <div className="muted small">
+              {people.length ? `🧑‍💼 ${kh(people.length)} ភ្នាក់ងារ · 👤 ${kh(memberCount)} សមាជិក នៅក្រោម Login` : 'មិនទាន់មានបញ្ជី — ចុច 🔄'}
+            </div>
+          </div>
+          <button type="button" className="btn small" disabled={peopleBusy || !savedLogin} onClick={loadPeople}>{peopleBusy ? 'កំពុងទាញ…' : '🔄 ទាញបញ្ជី'}</button>
+        </div>
+        {!savedLogin && <span className="muted small">រក្សាទុក 🔐 Login ជាមុនសិន។</span>}
+        {peopleError && <span className="small error">⚠️ {peopleError}</span>}
+        {people.length > 0 && (
+          <details>
+            <summary className="muted small">មើលបញ្ជី</summary>
+            <ul className="people small">
+              {people.map((a) => (
+                <li key={a.agentCode}>
+                  🧑‍💼 <strong>{agentLabel(a)}</strong>
+                  <div className="muted">{a.members.length ? a.members.map((m) => `👤 ${memberLabel(m)}`).join(' · ') : 'គ្មានសមាជិក'}</div>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+        <label className="label">
+          <span className="muted small">⭐ លំនាំដើម · ការហៅតាមម៉ោង និងពេលបើកក្នុង bot (ក្នុង bot ចុច 🔀 ដើម្បីមើលអ្នកផ្សេង)</span>
+          <select className="field" value={form.memberCode} onChange={(e) => pickDefault(e.target.value)}>
+            <option value="">👥 ទាំងអស់</option>
+            {form.memberCode && !people.some((a) => a.members.some((m) => m.userCode === form.memberCode)) && (
+              <option value={form.memberCode}>👤 {form.memberName || form.memberCode}</option>
+            )}
+            {people.map((a) => (
+              <optgroup key={a.agentCode} label={`🧑‍💼 ${agentLabel(a)}`}>
+                {a.members.map((m) => <option key={m.userCode} value={m.userCode}>👤 {memberLabel(m)}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+      </section>
+
+      <section className="card">
+        <div className="step"><span>4</span> ពេលណា <span className="muted small">(ម៉ោងភ្នំពេញ)</span></div>
         <div className="segmented small">
           <button className={mode === 'once' ? 'on' : ''} onClick={() => pickMode('once')}>ម្ដង/ថ្ងៃ</button>
           <button className={mode === 'every' ? 'on' : ''} onClick={() => pickMode('every')}>រៀងរាល់…ម៉ោង</button>
@@ -303,8 +353,8 @@ export default function DailyPanel({ group }) {
       <section className="card">
         <div className="row">
           <div className="grow">
-            <div className="step"><span>3</span> ផ្ញើទៅក្រុម</div>
-            <div className="muted small">{form.postToGroup ? 'ផ្ញើលទ្ធផលទៅក្រុម ហើយរក្សាទុក' : 'រក្សាទុកតែប៉ុណ្ណោះ (មើលតាម 📥 ក្នុង /menu)'}</div>
+            <div className="step"><span>5</span> ផ្ញើទៅក្រុម</div>
+            <div className="muted small">{form.postToGroup ? 'ផ្ញើលទ្ធផលរបស់ ⭐ លំនាំដើម ទៅក្រុម ហើយរក្សាទុក' : 'រក្សាទុកតែប៉ុណ្ណោះ (មើលតាម 📥 ក្នុង /menu)'}</div>
           </div>
           <Switch on={form.postToGroup} onChange={(postToGroup) => set({ postToGroup })} label="Post to group" />
         </div>
@@ -319,10 +369,21 @@ export default function DailyPanel({ group }) {
           <button className="btn grow" disabled={!!busy} onClick={save}>{busy === 'save' ? 'កំពុងរក្សាទុក…' : '💾 រក្សាទុក'}</button>
         </div>
       ) : (
-        <div className="row">
-          <button className="icon grow" disabled={!!busy || !saved.url} onClick={() => run(false)}>{busy === 'test' ? 'កំពុងហៅ…' : '🧪 សាកល្បង'}</button>
-          <button className="icon grow" disabled={!!busy || !saved.url} onClick={() => run(true)}>{busy === 'post' ? 'កំពុងហៅ…' : '▶️ ដំណើរការឥឡូវ'}</button>
-        </div>
+        <>
+          <label className="label">
+            <span className="muted small">សាកល្បងសម្រាប់</span>
+            <select className="field" value={testWho} onChange={(e) => setTestWho(e.target.value)}>
+              <option value="default">⭐ លំនាំដើម ({saved.memberCode ? saved.memberName || saved.memberCode : 'ទាំងអស់'})</option>
+              <option value="">👥 ទាំងអស់</option>
+              {people.length > 1 && people.map((a) => <option key={a.agentCode} value={a.agentCode}>🧑‍💼 {agentLabel(a)}</option>)}
+              {people.map((a) => a.members.map((m) => <option key={m.userCode} value={m.userCode}>👤 {memberLabel(m)}</option>))}
+            </select>
+          </label>
+          <div className="row">
+            <button className="icon grow" disabled={!!busy || !saved.url} onClick={() => run(false)}>{busy === 'test' ? 'កំពុងហៅ…' : '🧪 សាកល្បង'}</button>
+            <button className="icon grow" disabled={!!busy || !saved.url} onClick={() => run(true)}>{busy === 'post' ? 'កំពុងហៅ…' : '▶️ ដំណើរការឥឡូវ'}</button>
+          </div>
+        </>
       )}
       {!dirty && !saved.url && <p className="muted small center-text">ដាក់ URL ហើយរក្សាទុក ដើម្បីសាកល្បង។</p>}
 
@@ -335,7 +396,7 @@ export default function DailyPanel({ group }) {
             return (
               <li key={key}>
                 <button className="row plain" onClick={() => setOpenKey(openKey === key ? null : key)}>
-                  <span>{r.ok ? '✅' : '⚠️'} {r.day.split('-').reverse().join('/')} · {r.slot} · {r.subject ? (r.subject === form.memberCode ? `👤 ${form.memberName || r.subject}` : `👤 ${r.subject}`) : '👥'}</span>
+                  <span>{r.ok ? '✅' : '⚠️'} {r.day.split('-').reverse().join('/')} · {r.slot} · {r.who}</span>
                   <span className="muted small">{r.ok ? `HTTP ${r.httpStatus}` : r.error} {openKey === key ? '▴' : '▾'}</span>
                 </button>
                 {openKey === key && (
