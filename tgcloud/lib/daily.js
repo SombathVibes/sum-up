@@ -358,6 +358,21 @@ function snapshotWinLose(row) {
   }
 }
 
+/**
+ * A saved report's day totals in riel ({ bet, reward, wl, user, company, usd }),
+ * or null when it has none: today's live numbers, before the total reports
+ * fill the day.
+ */
+export function snapshotTotals(row) {
+  if (!row?.ok) return null;
+  try {
+    const lotteries = lotteriesOf(JSON.parse(row.body));
+    return lotteries ? lotteryTotals(lotteries) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** '📈 ចំណេញ ៛158,500' (positive win/lose is the house's gain) or '📉 ខាត ៛6,600'. */
 const profit = (wl) => (wl < 0 ? `📉 ខាត ៛${riel(-wl)}` : `📈 ចំណេញ ៛${riel(wl)}`);
 

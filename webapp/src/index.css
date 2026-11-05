@@ -129,3 +129,10 @@ details summary { cursor: pointer; padding: 4px 0; }
 .card.fold > summary::after { content: '▾'; position: absolute; right: 0; top: 2px; color: var(--muted); transition: transform 0.15s; }
 .card.fold[open] > summary::after { transform: rotate(180deg); }
 .fold-body { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+/* 🎰 lottery card on the group report */
+.bad { color: var(--bad); }
+.lottery .totals .up, .lottery .totals .down { display: block; }
+.lottery p { margin: 8px 0 0; }
+.lottery details.days { margin-top: 8px; }
+.lottery details.days summary { cursor: pointer; }

@@ -1,5 +1,6 @@
-// One group: a report for any date range (totals, change, chart, banks,
-// searchable payments, CSV to chat) and its billing (history, renew).
+// One group: a report for any date range (totals, change, the lottery
+// totals when that's on, chart, banks, searchable payments, CSV to chat) and
+// its billing (history, renew).
 
 import { useCallback, useEffect, useState } from 'react';
 import { call } from '../api.js';
@@ -7,6 +8,7 @@ import BarChart from '../components/BarChart.jsx';
 import { accessBadge, addDays, amount, change, dateOf, monthBounds, timeOf, todayKey } from '../format.js';
 import { BillingPanel } from './Billing.jsx';
 import DailyPanel from './Daily.jsx';
+import LotteryCard from './LotteryCard.jsx';
 
 const tg = window.Telegram?.WebApp;
 
@@ -81,6 +83,8 @@ export default function Group({ group, startView, onClose, onChanged }) {
                 <div><div className="muted small">ប្រតិ.</div><strong>{report.total.ops}</strong></div>
               </section>
               <p className="muted small">ធៀបនឹងរយៈពេលស្មើគ្នាមុននេះ</p>
+
+              <LotteryCard groupId={group.tgId} range={range} />
 
               <section className="card">
                 <div className="row">
