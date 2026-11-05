@@ -199,10 +199,11 @@ const memberRows = (reply, mine) => settlements(reply)
  * run): the agent-level by-draw report (one row per agent and draw, by
  * username) for the day tab, and report/ and send/total-report/all at member
  * level with no agent filter, which list every member under the login; each
- * agent gets its own members' rows, saved as fetchDay would. Returns
- * { agents (count), error }.
+ * agent gets its own members' rows, saved as fetchDay would. `agentReport`:
+ * the agent-level by-draw reply when the caller already has it (the run's
+ * agent reports), so it isn't asked for twice. Returns { agents (count), error }.
  */
-export async function collectLoginDay(login, day) {
+export async function collectLoginDay(login, day, { agentReport = null } = {}) {
   const { json } = sessionFor(login);
   let list = await loginAgents(login.id);
   if (!list.length) list = await syncAgents(login);
@@ -210,7 +211,7 @@ export async function collectLoginDay(login, day) {
   let replies;
   try {
     replies = await Promise.all([
-      json('report/daily-report/all', { filterByReportType: 'ONE', filterByDate: day, filterByLevel: 'agent' }),
+      agentReport ?? json('report/daily-report/all', { filterByReportType: 'ONE', filterByDate: day, filterByLevel: 'agent' }),
       json('report/total-report/all', totals),
       json('send/total-report/all', totals),
     ]);

@@ -220,7 +220,7 @@ export default function Logins() {
   const run = (l) => {
     setBusy(`run ${l.id}`);
     call('loginRun', { id: l.id })
-      .then((r) => note(l.id, [...r.reports.map((x) => `${x.ok ? '✅' : '⚠️'} ${x.who}${x.ok ? '' : ` — ${x.error}`}`), r.members && (r.members.error ? `⚠️ សមាជិក — ${r.members.error}` : `✅ 👤 ${kh(r.members.count)} សមាជិក`), r.totalsError ? `⚠️ សរុប — ${r.totalsError}` : '✅ សរុបសមាជិក'].filter(Boolean).join('\n')))
+      .then((r) => note(l.id, [...r.reports.map((x) => `${x.ok ? '✅' : '⚠️'} ${x.who}${x.ok ? '' : ` — ${x.error}`}`), r.members && (r.members.error ? `⚠️ សមាជិក — ${r.members.error}` : `✅ 👤 ${kh(r.members.count)} សមាជិក`), r.agents && (r.agents.error ? `⚠️ ភ្នាក់ងារ — ${r.agents.error}` : `✅ 🧑‍💼 ${kh(r.agents.count)} ភ្នាក់ងារ`), r.totalsError ? `⚠️ សរុប — ${r.totalsError}` : '✅ សរុបសមាជិក'].filter(Boolean).join('\n')))
       .catch((e) => note(l.id, `⚠️ ${e.message}`))
       .finally(() => setBusy(null));
   };

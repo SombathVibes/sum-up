@@ -207,18 +207,19 @@ async function saveReport(row) {
 }
 
 /**
- * Every member's by-draw report for a day, in one call (two with 📤 សាង): the
- * member-level report under the login lists one row per member and draw,
- * named by username (lottery-services AllDailyReportServiceV2), which is split
- * here into one saved report per member, in the shape a one-member call gives
- * (memberBody). `members()`: the login's members [{ userCode, username }];
- * called again with { refresh: true } when the reply has a member with bets
- * it doesn't know. Returns { count (members saved), error }.
+ * Every member's (or agent's: `level`) by-draw report for a day, in one call
+ * (two with 📤 សាង): the report at that level under the login lists one row
+ * per user and draw, named by username (lottery-services
+ * AllDailyReportServiceV2), which is split here into one saved report per
+ * user, in the shape a one-user call gives (memberBody). `people()`: the
+ * login's users at that level [{ userCode, username }]; called again with
+ * { refresh: true } when the reply has one with bets it doesn't know.
+ * Returns { count (users saved), error, data (the first reply, parsed, or null) }.
  */
-export async function fetchMemberReports(login, day, members, { slot = nowHHMM(), request } = {}) {
+export async function fetchLevelReports(login, day, level, people, { slot = nowHHMM(), request } = {}) {
   request ??= openSession(login);
   const get = async (send) => {
-    const q = new URLSearchParams({ filterByReportType: 'ONE', filterByDate: day, filterByLevel: 'member' });
+    const q = new URLSearchParams({ filterByReportType: 'ONE', filterByDate: day, filterByLevel: level });
     if (send) q.set('isSend', 'true');
     try {
       const res = await request(`${login.baseUrl}/${REPORT_PATH}?${q}`);
@@ -232,10 +233,10 @@ export async function fetchMemberReports(login, day, members, { slot = nowHHMM()
   };
   const first = await get(false);
   const second = !first.error && login.sendReport ? await get(true) : null;
-  let list = await members();
+  let list = await people();
   const names = new Set(list.map((m) => m.username));
   const betting = (first.data?.data?.items ?? []).flatMap((it) => it?.upperLineSale?.items ?? []).map((r) => r.username);
-  if (betting.some((u) => u && !names.has(u))) list = await members({ refresh: true });
+  if (betting.some((u) => u && !names.has(u))) list = await people({ refresh: true });
   for (const m of list) {
     await saveReport({
       loginId: login.id, day, subject: m.userCode, slot, ranAt: now(),
@@ -243,12 +244,15 @@ export async function fetchMemberReports(login, day, members, { slot = nowHHMM()
       body2: second?.data ? memberBody(second.data, m.username) : '', error2: second?.error ?? null,
     });
   }
-  return { count: list.length, error: first.error ?? null };
+  return { count: list.length, error: first.error ?? null, data: first.data ?? null };
 }
 
+/** fetchLevelReports for every member under the login. */
+export const fetchMemberReports = (login, day, members, opts) => fetchLevelReports(login, day, 'member', members, opts);
+
 /**
- * One member's part of a member-level report reply, as the compact JSON text
- * a one-member call gives (compactLottery): per lottery, that member's draw
+ * One user's part of a member- or agent-level report reply, as the compact
+ * JSON text a one-user call gives (compactLottery): per lottery, that user's draw
  * rows, and a summary that adds them up (checked against one-member replies:
  * the same draws and the same totals).
  */
