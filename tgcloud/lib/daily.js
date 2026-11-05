@@ -11,7 +11,7 @@
 
 import { api, db, fetch } from 'sdk';
 import { and, desc, eq, gte, lt, lte } from 'sdk/db';
-import { groupLotterySettings, drawReports } from '../schema.js';
+import { agents, groupLotterySettings, drawReports } from '../schema.js';
 import { SYNC_HELPER_SECRET, SYNC_HELPER_URL } from './config.js';
 import { addDays, dayKey, formatTime, now, pad2, parseDayKey, today } from './dates.js';
 import { listGroups } from './store.js';
@@ -158,38 +158,121 @@ export async function pushSchedule() {
 export const reportHistory = (groupId, limit = 30) => db.select().from(drawReports)
   .where(eq(drawReports.groupId, groupId)).orderBy(desc(drawReports.day)).limit(limit).all();
 
-/** One day's saved report ('YYYY-MM-DD'), or undefined. */
-export const reportForDay = (groupId, day) => db.select().from(drawReports)
-  .where(and(eq(drawReports.groupId, groupId), eq(drawReports.day, day))).get();
+/** One day's saved report ('YYYY-MM-DD') for a subject ('' = everyone), or undefined. */
+export const reportForDay = (groupId, day, subject = '') => db.select().from(drawReports)
+  .where(and(eq(drawReports.groupId, groupId), eq(drawReports.day, day), eq(drawReports.subject, subject))).get();
 
-/** Days ('YYYY-MM-DD') in [from, to] that have a successful saved report. */
-export async function reportDays(groupId, from, to) {
+/** Days ('YYYY-MM-DD') in [from, to] that have a successful saved report for a subject. */
+export async function reportDays(groupId, from, to, subject = '') {
   const rows = await db.select({ day: drawReports.day }).from(drawReports)
-    .where(and(eq(drawReports.groupId, groupId), gte(drawReports.day, from), lte(drawReports.day, to), eq(drawReports.ok, true)))
+    .where(and(eq(drawReports.groupId, groupId), eq(drawReports.subject, subject), gte(drawReports.day, from), lte(drawReports.day, to), eq(drawReports.ok, true)))
     .all();
   return new Set(rows.map((r) => r.day));
 }
 
-/** The URL with {date} and {group} filled in. */
-export const buildUrl = (url, day, group, cfg = {}) => url
-  .replaceAll('{date}', encodeURIComponent(day))
-  .replaceAll('{group}', encodeURIComponent(String(group.tgId)))
-  .replaceAll('{member}', encodeURIComponent(cfg.memberCode ?? ''));
+// ---------------------------------------------------------------- subjects
+// Whose report: everyone under the group's login (key ''), one of its agents,
+// or one member (key: the user code). The group's default is its bound member,
+// else everyone.
+
+const parseMembers = (text) => {
+  try {
+    const list = JSON.parse(text || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+};
+
+/** The group's saved agents (lib/agents.js syncs them), with their members parsed. */
+export async function savedAgents(groupId) {
+  const rows = await db.select().from(agents).where(eq(agents.groupId, groupId)).all();
+  return rows.map((a) => ({ ...a, memberList: parseMembers(a.members) })).sort((a, b) => a.username.localeCompare(b.username));
+}
+
+/**
+ * A subject key as { key, kind: 'all'|'agent'|'member', code, level, name,
+ * agentCode }, checked against the group's saved agents and members; an
+ * unknown code is everyone. For everyone, code/level/name come from the login
+ * (loginSubject) once signed in.
+ */
+export async function subjectOf(groupId, key) {
+  if (key) {
+    for (const a of await savedAgents(groupId)) {
+      if (a.userCode === key) return { key, kind: 'agent', code: key, level: 'agent', name: a.username, nick: a.nickname, agentCode: key };
+      const m = a.memberList.find((x) => x.userCode === key);
+      if (m) return { key, kind: 'member', code: key, level: 'member', name: m.username, nick: m.nickname ?? '', agentCode: a.userCode };
+    }
+  }
+  return { key: '', kind: 'all', code: '', level: '', name: '', nick: '', agentCode: '' };
+}
+
+/** The group's default subject: its bound member, else everyone. */
+export const defaultSubject = (groupId, cfg) => subjectOf(groupId, cfg.memberCode);
+
+/** Fills an 'all' subject from the signed-in user's token (its code and level, e.g. master). */
+async function loginSubject(subject, request) {
+  if (subject.kind !== 'all' || subject.code) return subject;
+  const p = jwtPayload((await request.token()) ?? '');
+  if (!p) return subject;
+  const role = String(p.userRole ?? '');
+  return { ...subject, code: String(p.userCode ?? ''), level: /^[a-z]+$/i.test(role) ? role.toLowerCase() : 'agent', name: String(p.username ?? p.user_name ?? '') };
+}
+
+/** '👥 ទាំងអស់ (login)' / '🧑‍💼 agent · nick' / '👤 member · nick'. */
+export function subjectLabel(subject) {
+  if (subject.kind === 'all') return `👥 ទាំងអស់${subject.name ? ` (${subject.name})` : ''}`;
+  return `${subject.kind === 'agent' ? '🧑‍💼' : '👤'} ${subject.name}${subject.nick ? ` · ${subject.nick}` : ''}`;
+}
+
+/** A subject key in button data: the code, or 'a' for everyone. */
+export const subjectToken = (key) => key || 'a';
+/** Back from button data: 'a' → '', digits → the code, anything else → undefined (the default). */
+export const tokenSubject = (tok) => (tok === 'a' ? '' : /^\d{1,20}$/.test(tok ?? '') ? tok : undefined);
+
+/**
+ * The URL for a day and subject: {date}, {group}, {member} (the subject's user
+ * code) and {level} filled in; and when it has filterByUserCode (the lottery
+ * API), that and filterByLevel set to the subject, so one URL serves everyone,
+ * an agent or a member.
+ */
+export function buildUrl(url, day, group, subject = {}) {
+  const code = subject.code ?? '';
+  const filled = url
+    .replaceAll('{date}', encodeURIComponent(day))
+    .replaceAll('{group}', encodeURIComponent(String(group.tgId)))
+    .replaceAll('{member}', encodeURIComponent(code))
+    .replaceAll('{level}', encodeURIComponent(subject.level ?? ''));
+  if (!code) return filled;
+  try {
+    const u = new URL(filled);
+    if (!u.searchParams.has('filterByUserCode')) return filled;
+    u.searchParams.set('filterByUserCode', code);
+    if (u.searchParams.has('filterByLevel') && subject.level) u.searchParams.set('filterByLevel', subject.level);
+    return u.toString();
+  } catch {
+    return filled;
+  }
+}
 
 /** A dotted path ('data.token') out of a parsed reply. */
 const pick = (obj, path) => path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj);
 const TOKEN_FIELDS = ['token', 'access_token', 'accessToken', 'jwt', 'id_token', 'data.token', 'data.access_token', 'data.accessToken', 'data.jwt', 'result.token', 'result.access_token'];
 
-/** Signs in (cfg.authType 'login') and returns the bearer token, or throws a short reason. */
-/** True when a JWT's exp is past (or within a minute); tokens that aren't JWTs never count as expired. */
-function tokenExpired(token) {
+/** A JWT's payload, or null when it isn't one. */
+export function jwtPayload(token) {
   try {
     const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const { exp } = JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), '=')));
-    return typeof exp === 'number' && exp - 60 <= now();
+    return JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), '=')));
   } catch {
-    return false;
+    return null;
   }
+}
+
+/** True when a JWT's exp is past (or within a minute); tokens that aren't JWTs never count as expired. */
+function tokenExpired(token) {
+  const exp = jwtPayload(token)?.exp;
+  return typeof exp === 'number' && exp - 60 <= now();
 }
 
 /** The API's own reason from an error reply (message / error / error_description), short. */
@@ -272,25 +355,28 @@ export function openSession(group, cfg, signal) {
 }
 
 /**
- * Calls the group's URL now (signing in first if set), saves the result as today's report for `slot`
- * ('HH:MM'; default: this minute), replacing an earlier one for that slot, and,
- * if set, posts it in the group. Returns the saved row.
+ * Calls the group's URLs now for a subject (a key, see subjectOf; default: the
+ * group's default subject), signing in first if set, saves the result as that
+ * day's report for it, noting `slot` ('HH:MM'; default: this minute), and, if
+ * set, posts it in the group. Returns the saved row, with `who` (the subject).
  */
-export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today())) {
-  const row = { groupId: group.id, day, slot, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null, body2: '', error2: null };
+export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today()), key = cfg.memberCode) {
+  let who = await subjectOf(group.id, key);
+  const row = { groupId: group.id, day, subject: who.key, slot, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null, body2: '', error2: null };
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
   const failure = (e) => (e?.name === 'AbortError' ? `No answer in ${TIMEOUT_MS / 1000}s` : String(e?.message ?? e).slice(0, 300));
 
   const request = openSession(group, cfg, controller.signal);
   const get = async (rawUrl) => {
-    const res = await request(buildUrl(rawUrl, day, group, cfg));
+    const res = await request(buildUrl(rawUrl, day, group, who));
     const text = await res.text();
     const body = (res.ok && compactLottery(text)) || text.slice(0, MAX_BODY);
     return { res, body, error: res.ok ? null : `HTTP ${res.status}${replyReason(body)}` };
   };
 
   try {
+    who = await loginSubject(who, request);
     const first = await get(cfg.url);
     Object.assign(row, { httpStatus: first.res.status, ok: first.res.ok, body: first.body, error: first.error });
     if (row.ok && cfg.url2) {
@@ -308,20 +394,20 @@ export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today(
   }
   // One row per day: replace it, but a failed run keeps the last good report
   // (only noting the time it ran for, so that time isn't retried every minute).
-  const saved = !row.ok && (await reportForDay(group.id, day));
+  const saved = !row.ok && (await reportForDay(group.id, day, row.subject));
   if (saved?.ok) {
-    await db.update(drawReports).set({ slot }).where(and(eq(drawReports.groupId, group.id), eq(drawReports.day, day))).run();
+    await db.update(drawReports).set({ slot }).where(eq(drawReports.id, saved.id)).run();
   } else {
-    const { groupId: _g, day: _d, ...set } = row;
+    const { groupId: _g, day: _d, subject: _s, ...set } = row;
     await db.insert(drawReports).values(row)
-      .onConflictDoUpdate({ target: [drawReports.groupId, drawReports.day], set })
+      .onConflictDoUpdate({ target: [drawReports.groupId, drawReports.day, drawReports.subject], set })
       .run();
   }
   if (row.ok && cfg.postToGroup) {
-    const prev = await reportForDay(group.id, dayKey(addDays(parseDayKey(day), -1)));
-    await api.sendMessage({ chat_id: group.tgId, text: formatReport(group, row, prev), parse_mode: 'HTML' }).catch((e) => console.error('daily post failed', e));
+    const prev = await reportForDay(group.id, dayKey(addDays(parseDayKey(day), -1)), row.subject);
+    await api.sendMessage({ chat_id: group.tgId, text: formatReport(group, row, prev, who), parse_mode: 'HTML' }).catch((e) => console.error('daily post failed', e));
   }
-  return row;
+  return Object.assign(row, { who });
 }
 
 /** Snapshots are kept KEEP_DAYS days. */
@@ -340,8 +426,9 @@ export async function runDue() {
   for (const cfg of await enabledConfigs()) {
     const slot = parseTimes(cfg.times).filter((t) => t <= hhmm).at(-1);
     if (!slot || !cfg.url) continue;
-    // Already ran for this time (or later, e.g. a manual run) today.
-    if (((await reportForDay(cfg.groupId, day))?.slot ?? '') >= slot) continue;
+    // Already ran for this time (or later, e.g. a manual run) today, for the default subject.
+    const { key } = await subjectOf(cfg.groupId, cfg.memberCode ?? '');
+    if (((await reportForDay(cfg.groupId, day, key))?.slot ?? '') >= slot) continue;
     const group = (await listGroups()).find((g) => g.id === cfg.groupId);
     if (!group) continue;
     done.push({ group, row: await runDaily(group, toConfig(cfg, true), slot) });
@@ -519,11 +606,11 @@ function lotterySections(lotteries) {
 /**
  * A saved report as a Telegram message (HTML): known report shapes laid out,
  * other JSON as key/value lines, anything else as text. `prev` is the day
- * before's snapshot, for the lottery report's comparison.
+ * before's snapshot, for the lottery report's comparison; `who` the subject.
  */
-export function formatReport(group, row, prev = null) {
+export function formatReport(group, row, prev = null, who = null) {
   const [y, m, d] = row.day.split('-');
-  const head = `<b>📥 ${REPORT_NAME} · ${d}/${m}/${y}</b>\n🏪 ${escape(group.name ?? group.tgId)}`;
+  const head = `<b>📥 ${REPORT_NAME} · ${d}/${m}/${y}</b>\n🏪 ${escape(group.name ?? group.tgId)}${who ? ` · ${escape(subjectLabel(who))}` : ''}`;
   const foot = row.ranAt ? `\n\n<i>🕘 ទាញយកម៉ោង ${formatTime(row.ranAt)}</i>` : '';
   if (!row.ok) return `${head}\n\n⚠️ ${escape(row.error ?? 'Failed')}${foot}`;
   let data;
@@ -558,60 +645,98 @@ const btn = (text, callback_data) => ({ text, callback_data });
 const dm = (key) => `${key.slice(8, 10)}/${key.slice(5, 7)}`;
 
 /**
- * The 📥 day picker: today, yesterday and five more days (a week per page,
- * `page` weeks back), • on days with a saved report. Buttons: DREP_<day>,
- * DRWK_<page>, BACK.
+ * The 📥 day picker for a subject: today, yesterday and five more days (a
+ * week per page, `page` weeks back), • on days with a saved report. Buttons:
+ * DREP_<day>_<who>, DRWK_<page>_<who>, DRWHO (change subject), TOT_<who>, BACK.
  */
-export async function dayPicker(group, page = 0, { totals = false } = {}) {
+export async function dayPicker(group, page = 0, { totals = false, who } = {}) {
+  who ??= await defaultSubject(group.id, await dailyConfig(group.id));
+  const tok = subjectToken(who.key);
   const now = today();
   const first = addDays(now, -7 * page);
   const days = Array.from({ length: 7 }, (_, i) => dayKey(addDays(first, -i)));
-  const saved = await reportDays(group.id, days.at(-1), days[0]);
+  const saved = await reportDays(group.id, days.at(-1), days[0], who.key);
   const label = (key, i) => {
     const mark = saved.has(key) ? ' •' : '';
     if (page === 0 && i === 0) return `ថ្ងៃនេះ${mark}`;
     if (page === 0 && i === 1) return `ម្សិលមិញ${mark}`;
     return `${dm(key)}${mark}`;
   };
-  const buttons = days.map((key, i) => btn(label(key, i), `DREP_${key}`));
+  const buttons = days.map((key, i) => btn(label(key, i), `DREP_${key}_${tok}`));
   const rows = [buttons.slice(0, 2), buttons.slice(2, 5), buttons.slice(5, 7)];
-  rows.push([btn('◀ សប្ដាហ៍មុន', `DRWK_${page + 1}`), ...(page > 0 ? [btn('សប្ដាហ៍ក្រោយ ▶', `DRWK_${page - 1}`)] : [])]);
-  // The bound member's totals (lib/totals.js), when the group has one.
-  if (totals) rows.push([btn('💰 សរុប (ថ្ងៃ · សប្ដាហ៍ · ខែ)', 'TOT')]);
+  rows.push([btn('◀ សប្ដាហ៍មុន', `DRWK_${page + 1}_${tok}`), ...(page > 0 ? [btn('សប្ដាហ៍ក្រោយ ▶', `DRWK_${page - 1}_${tok}`)] : [])]);
+  rows.push([btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'DRWHO')]);
+  // Totals (lib/totals.js) from the saved per-member numbers, when the group signs in.
+  if (totals) rows.push([btn('💰 សរុប (ថ្ងៃ · សប្ដាហ៍ · ខែ)', `TOT_${tok}`)]);
   rows.push([btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
   return {
-    text: `<b>📥 ${REPORT_NAME}</b>\nជ្រើសរើសថ្ងៃ (• មានរបាយការណ៍រួច):`,
+    text: `<b>📥 ${REPORT_NAME}</b>\n${escape(subjectLabel(who))}\nជ្រើសរើសថ្ងៃ (• មានរបាយការណ៍រួច):`,
+    parse_mode: 'HTML',
+    reply_markup: { inline_keyboard: rows },
+  };
+}
+
+const MAX_PICK = 60;
+
+/**
+ * Pick whose numbers to see: everyone, each agent (when there is more than
+ * one) and each member, from the saved agents. `target(tok)` is the button
+ * data for a choice; `back` the button data to go back to. ⭐ marks the
+ * group's default.
+ */
+export async function subjectPicker(group, { target, back, title = `📥 ${REPORT_NAME}`, note = '' }) {
+  const list = await savedAgents(group.id);
+  const cfg = await dailyConfig(group.id);
+  const def = (await defaultSubject(group.id, cfg)).key;
+  const star = (key) => (key === def ? ' ⭐' : '');
+  const rows = [[btn(`👥 ទាំងអស់${star('')}`, target('a'))]];
+  let shown = 0;
+  for (const a of list) {
+    if (list.length > 1) rows.push([btn(`🧑‍💼 ${a.username}${a.nickname ? ` · ${a.nickname}` : ''}${star(a.userCode)}`, target(a.userCode))]);
+    const members = [...a.memberList].sort((x, y) => x.username.localeCompare(y.username));
+    for (let i = 0; i < members.length && shown < MAX_PICK; i += 2) {
+      rows.push(members.slice(i, i + 2).map((m) => btn(`👤 ${m.username}${star(m.userCode)}`, target(m.userCode))));
+      shown += 2;
+    }
+  }
+  rows.push([btn('🔄 ទាញបញ្ជីថ្មី', 'WHOSYNC'), btn('⬅️ ត្រឡប់ក្រោយ', back)]);
+  const total = list.reduce((n, a) => n + a.memberList.length, 0);
+  return {
+    text: `<b>${title}</b>\nមើលរបស់អ្នកណា?${total > MAX_PICK ? `\n(បង្ហាញ ${MAX_PICK}/${total} នាក់)` : ''}${list.length ? '' : '\nមិនទាន់មានបញ្ជីភ្នាក់ងារ — ចុច «🔄 ទាញបញ្ជីថ្មី»។'}${note}`,
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: rows },
   };
 }
 
 /**
- * One day's report: the saved one, or (none saved yet, or `refresh`) fetched
- * now for that day and saved without posting. Buttons: previous/next day,
- * refresh (DREP!_<day>), other day (DREPORT), BACK.
+ * One day's report for a subject: the saved one, or (none saved yet, or
+ * `refresh`) fetched now for that day and saved without posting. Buttons:
+ * previous/next day, refresh (DREP!_<day>_<who>), other day, other subject, BACK.
  */
-export async function dayReportScreen(group, day, { refresh = false } = {}) {
+export async function dayReportScreen(group, day, { refresh = false, key } = {}) {
   const todayKey = dayKey(today());
   if (!parseDayKey(day) || day > todayKey) day = todayKey;
-  let row = refresh ? null : await reportForDay(group.id, day);
+  const cfg = await dailyConfig(group.id, { secret: true });
+  let who = await subjectOf(group.id, key ?? cfg.memberCode);
+  const tok = subjectToken(who.key);
+  let row = refresh ? null : await reportForDay(group.id, day, who.key);
   if (!row) {
-    const cfg = await dailyConfig(group.id, { secret: true });
-    row = await runDaily(group, { ...cfg, postToGroup: false }, nowHHMM(), day);
+    row = await runDaily(group, { ...cfg, postToGroup: false }, nowHHMM(), day, who.key);
+    who = row.who;
   }
   const d = parseDayKey(day);
   const prev = dayKey(addDays(d, -1));
   const next = dayKey(addDays(d, 1));
-  const nav = [btn(`◀ ${dm(prev)}`, `DREP_${prev}`)];
-  if (next <= todayKey) nav.push(btn(`${dm(next)} ▶`, `DREP_${next}`));
+  const nav = [btn(`◀ ${dm(prev)}`, `DREP_${prev}_${tok}`)];
+  if (next <= todayKey) nav.push(btn(`${dm(next)} ▶`, `DREP_${next}_${tok}`));
   return {
-    text: formatReport(group, row, await reportForDay(group.id, prev)),
+    text: formatReport(group, row, await reportForDay(group.id, prev, who.key), who),
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
         nav,
-        [btn('🔄 ទាញថ្មី', `DREP!_${day}`), btn('📅 ថ្ងៃផ្សេង', 'DREPORT')],
-        [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
+        [btn('🔄 ទាញថ្មី', `DREP!_${day}_${tok}`), btn('📅 ថ្ងៃផ្សេង', `DRWK_0_${tok}`)],
+        [btn('🔀 ប្តូរអ្នក', `DRWHO_${day}`), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
       ],
     },
   };

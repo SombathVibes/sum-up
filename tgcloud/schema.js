@@ -154,9 +154,13 @@ export const drawReports = table('draw_reports', {
   // The second URL's reply (group_lottery_settings.url2), stored the same way; empty when there is none.
   body2:      text('body2').notNull().default(''),
   error2:     text('error2'),
+  // Whose report it is: a member's or agent's user code, '' for everyone under
+  // the group's login (the scheduled run fetches the group's default: its bound
+  // member, else everyone; others are fetched when someone picks them).
+  subject:    text('subject').notNull().default(''),
 }, (t) => ({
-  // One per group and day; also serves a group's last few days, newest first.
-  day: uniqueIndex('draw_reports_day_uniq').on(t.groupId, t.day),
+  // One per group, day and subject; also serves a group's last few days, newest first.
+  day: uniqueIndex('draw_reports_day_subject_uniq').on(t.groupId, t.day, t.subject),
 }));
 
 // Lottery agents under a group's report login, found through the API (the

@@ -12,6 +12,6 @@ export default async function (input, ctx) {
   const reports = await reportHistory(group.id);
   return {
     config: await dailyConfig(group.id),
-    reports: reports.map((r) => ({ day: r.day, slot: r.slot, ranAt: r.ranAt, ok: !!r.ok, httpStatus: r.httpStatus, error: r.error, body: r.body.slice(0, 4000), body2: (r.body2 ?? '').slice(0, 4000), error2: r.error2 })),
+    reports: reports.map((r) => ({ day: r.day, subject: r.subject ?? '', slot: r.slot, ranAt: r.ranAt, ok: !!r.ok, httpStatus: r.httpStatus, error: r.error, body: r.body.slice(0, 4000), body2: (r.body2 ?? '').slice(0, 4000), error2: r.error2 })),
   };
 }

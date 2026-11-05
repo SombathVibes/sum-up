@@ -152,11 +152,11 @@ export default function DailyPanel({ group }) {
         <div className="chips">
           <button className="chip" onClick={() => insert('{date}')}>+ {'{date}'} <span className="muted">ថ្ងៃ</span></button>
           <button className="chip" onClick={() => insert('{group}')}>+ {'{group}'} <span className="muted">ID ក្រុម</span></button>
-          {form.memberCode && <button className="chip" onClick={() => insert('{member}')}>+ {'{member}'} <span className="muted">សមាជិក</span></button>}
+          <button className="chip" onClick={() => insert('{member}')}>+ {'{member}'} <span className="muted">អ្នកដែលកំពុងមើល</span></button>
         </div>
 
         <div className="label">
-          <span className="muted small">👤 សមាជិករបស់ក្រុមនេះ · សម្រាប់ {'{member}'} និង 💰 សរុប</span>
+          <span className="muted small">👤 លំនាំដើម (ស្រេចចិត្ត) · ការហៅតាមម៉ោង និងពេលបើកដំបូង · មិនកំណត់ = 👥 ទាំងអស់។ ក្នុង bot អាចប្តូរមើលសមាជិក / ភ្នាក់ងារផ្សេងបាន 🔀</span>
           {Array.isArray(members) ? (
             <select className="field" value={form.memberCode}
               onChange={(e) => {
@@ -164,7 +164,7 @@ export default function DailyPanel({ group }) {
                 const hit = members.flatMap((a) => a.members.map((m) => ({ ...m, agentCode: a.agentCode }))).find((m) => m.userCode === code);
                 set({ memberCode: code, memberName: hit?.username ?? '', agentCode: hit?.agentCode ?? '' });
               }}>
-              <option value="">— មិនកំណត់ —</option>
+              <option value="">👥 ទាំងអស់ (មិនកំណត់)</option>
               {members.map((a) => (
                 <optgroup key={a.agentCode} label={`${a.agent}${a.agentNick ? ` · ${a.agentNick}` : ''}`}>
                   {a.members.map((m) => <option key={m.userCode} value={m.userCode}>{m.username}{m.nickname ? ` · ${m.nickname}` : ''}</option>)}
@@ -173,7 +173,7 @@ export default function DailyPanel({ group }) {
             </select>
           ) : (
             <div className="row">
-              <span className="grow small">{form.memberCode ? `${form.memberName || form.memberCode}` : <span className="muted">មិនទាន់កំណត់</span>}</span>
+              <span className="grow small">{form.memberCode ? `${form.memberName || form.memberCode}` : <span className="muted">👥 ទាំងអស់</span>}</span>
               <button type="button" className="btn small" disabled={members === 'loading' || form.authType !== 'login'} onClick={loadMembers}>
                 {members === 'loading' ? 'កំពុងទាញ…' : form.memberCode ? '🔄 ប្តូរ' : '👤 ជ្រើសរើស'}
               </button>
@@ -331,11 +331,11 @@ export default function DailyPanel({ group }) {
         {!data.reports.length && <p className="muted small">មិនទាន់មានទេ។ ចុច 🧪 សាកល្បង ដើម្បីមើលអ្វីដែល URL ផ្ញើមក។</p>}
         <ul className="payments">
           {data.reports.map((r) => {
-            const key = `${r.day} ${r.slot}`;
+            const key = `${r.day} ${r.subject}`;
             return (
               <li key={key}>
                 <button className="row plain" onClick={() => setOpenKey(openKey === key ? null : key)}>
-                  <span>{r.ok ? '✅' : '⚠️'} {r.day.split('-').reverse().join('/')} · {r.slot}</span>
+                  <span>{r.ok ? '✅' : '⚠️'} {r.day.split('-').reverse().join('/')} · {r.slot} · {r.subject ? (r.subject === form.memberCode ? `👤 ${form.memberName || r.subject}` : `👤 ${r.subject}`) : '👥'}</span>
                   <span className="muted small">{r.ok ? `HTTP ${r.httpStatus}` : r.error} {openKey === key ? '▴' : '▾'}</span>
                 </button>
                 {openKey === key && (

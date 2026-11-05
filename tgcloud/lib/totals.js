@@ -3,12 +3,15 @@
 // report/ and send/total-report/all, saved per day in agent_daily_totals (lib/agents.js)
 // and shared with the agent Excel; a period adds its days up.
 //
-// Buttons: TOT (period picker), TOT_D_<YYYY-MM-DD>, TOT_W_<monday>, TOT_M_<YYYY-MM>;
-// a trailing '!' (🔄) fetches today again instead of using its 5-minute-old row.
+// Whose: everyone under the login, an agent or a member (daily.js subjectOf),
+// as a trailing _<who> (the user code, or 'a' for everyone).
+// Buttons: TOT_<who> (period picker), TOT_D_<YYYY-MM-DD>_<who>, TOT_W_<monday>_<who>,
+// TOT_M_<YYYY-MM>_<who>, TOTWHO (change whose); a trailing '!' (🔄) fetches
+// today again instead of using its 5-minute-old row.
 
-import { memberTotals } from './agents.js';
+import { subjectTotals } from './agents.js';
 import { addDays, addMonths, dayKey, monthKey, parseDayKey, parseMonthKey, startOf, today } from './dates.js';
-import { REPORT_NAME } from './daily.js';
+import { REPORT_NAME, subjectLabel, subjectToken } from './daily.js';
 
 const btn = (text, callback_data) => ({ text, callback_data });
 const escape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -31,6 +34,16 @@ const daysFrom = (first, count) => Array.from({ length: count }, (_, i) => dayKe
  */
 export function periodOf(data) {
   const todayKey = dayKey(today());
+  // The subject suffix goes onto the neighbours too.
+  const [, base, tok] = /^(TOT_[DWM]_[\d-]+)(?:_(a|\d{1,20}))?$/.exec(data) ?? [];
+  if (!base) return null;
+  const p = periodOfBase(base, todayKey);
+  if (!p) return null;
+  const suffix = tok ? `_${tok}` : '';
+  return { ...p, tok, prev: `${p.prev}${suffix}`, next: p.next && `${p.next}${suffix}` };
+}
+
+function periodOfBase(data, todayKey) {
   let m = /^TOT_D_(\d{4}-\d\d-\d\d)$/.exec(data);
   if (m && parseDayKey(m[1]) && m[1] <= todayKey) {
     const key = m[1];
@@ -76,37 +89,39 @@ function previousDays(p) {
   return q ? q.days.slice(0, p.days.length) : [];
 }
 
-/** TOT: pick a period. Plus a way back to the by-draw report. */
-export function totalsPicker() {
+/** TOT_<who>: pick a period for a subject. Plus changing whose, and back to the by-draw report. */
+export function totalsPicker(who) {
+  const w = `_${subjectToken(who.key)}`;
   const t = dayKey(today());
   const y = dayKey(addDays(today(), -1));
   const thisMonday = mondayOf(t);
   const month = t.slice(0, 7);
   return {
-    text: `<b>💰 សរុប</b>\nជ្រើសរើសរយៈពេល:`,
+    text: `<b>💰 សរុប</b>\n${escape(subjectLabel(who))}\nជ្រើសរើសរយៈពេល:`,
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
-        [btn('ថ្ងៃនេះ', `TOT_D_${t}`), btn('ម្សិលមិញ', `TOT_D_${y}`)],
-        [btn('សប្ដាហ៍នេះ', `TOT_W_${thisMonday}`), btn('សប្ដាហ៍មុន', `TOT_W_${dayKey(addDays(parseDayKey(thisMonday), -7))}`)],
-        [btn('ខែនេះ', `TOT_M_${month}`), btn('ខែមុន', `TOT_M_${monthKey(addMonths(parseMonthKey(month), -1))}`)],
-        [btn(`📋 ${REPORT_NAME} (ប្រចាំវេន)`, 'DREPORT')],
+        [btn('ថ្ងៃនេះ', `TOT_D_${t}${w}`), btn('ម្សិលមិញ', `TOT_D_${y}${w}`)],
+        [btn('សប្ដាហ៍នេះ', `TOT_W_${thisMonday}${w}`), btn('សប្ដាហ៍មុន', `TOT_W_${dayKey(addDays(parseDayKey(thisMonday), -7))}${w}`)],
+        [btn('ខែនេះ', `TOT_M_${month}${w}`), btn('ខែមុន', `TOT_M_${monthKey(addMonths(parseMonthKey(month), -1))}${w}`)],
+        [btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'TOTWHO')],
+        [btn(`📋 ${REPORT_NAME} (ប្រចាំវេន)`, `DRWK_0${w}`)],
         [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
       ],
     },
   };
 }
 
-/** One period's totals for the group's bound member (`refresh`: today fetched again). */
-export async function totalsScreen(group, cfg, data, { refresh = false } = {}) {
+/** One period's totals for a subject (`who`, daily.js subjectOf; `refresh`: today fetched again). */
+export async function totalsScreen(group, who, data, { refresh = false } = {}) {
   const p = periodOf(data);
-  if (!p) return totalsPicker();
-  const [cur, prev] = await Promise.all([memberTotals(group, cfg, p.days, { refresh }), memberTotals(group, cfg, previousDays(p)).catch(() => null)]);
+  if (!p) return totalsPicker(who);
+  const [cur, prev] = await Promise.all([subjectTotals(group, who, p.days, { refresh }), subjectTotals(group, who, previousDays(p)).catch(() => null)]);
   const r = cur.report;
   const s = cur.send;
   const lines = [
     `<b>💰 សរុប · ${p.label}</b>`,
-    `🏪 ${escape(group.name ?? group.tgId)} · 👤 ${escape(cfg.memberName || cfg.memberCode)}`,
+    `🏪 ${escape(group.name ?? group.tgId)} · ${escape(subjectLabel(who))}`,
     '',
   ];
   if (!r.commissionKhr && !r.winLoseAmountKhr && !s.commissionKhr) {
@@ -143,6 +158,6 @@ export async function totalsScreen(group, cfg, data, { refresh = false } = {}) {
   return {
     text: lines.join('\n'),
     parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', 'TOT'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]] },
+    reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', `TOT_${subjectToken(who.key)}`), btn('🔀 ប្តូរអ្នក', 'TOTWHO')], [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]] },
   };
 }

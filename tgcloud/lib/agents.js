@@ -265,30 +265,43 @@ const ZERO = () => Object.fromEntries(MEMBER_FIELDS.map((f) => [f, 0]));
 const addInto = (sum, row) => { for (const f of MEMBER_FIELDS) sum[f] += num(row?.[f]); return sum; };
 
 /**
- * The bound member's totals over `days` (cfg: the group's source with
- * memberCode/agentCode), from agent_daily_totals (shared with the Excel; missing or
- * stale days fetched, `refresh`: today again).
+ * A subject's totals over `days` (who: daily.js subjectOf — everyone under the
+ * login, one agent, or one member), from agent_daily_totals (shared with the
+ * Excel; missing or stale days fetched, `refresh`: today again): the sum of
+ * the matching members' rows, so everyone/an agent is all its members.
  * Returns { report, send, perDay: [{ day, report, send }], missing, error }.
  */
-export async function memberTotals(group, cfg, days, { refresh = false } = {}) {
-  let agent = (await groupAgents(group.id)).find((a) => a.userCode === cfg.agentCode);
-  if (!agent) agent = (await syncAgents(group)).find((a) => a.userCode === cfg.agentCode);
-  if (!agent) throw new Error('The bound member’s agent isn’t under this login any more.');
-  const r = await collectDays(group, agent, days, { refresh });
-  // By user code (rows saved before codes were kept: by username).
-  const pick = (rows) => rows.find((x) => (x.userCode ? x.userCode === cfg.memberCode : x.username === cfg.memberName)) ?? null;
+export async function subjectTotals(group, who, days, { refresh = false, budgetMs = 12000 } = {}) {
+  let list = await groupAgents(group.id);
+  if (!list.length || (who.agentCode && !list.some((a) => a.userCode === who.agentCode))) list = await syncAgents(group);
+  const wanted = who.kind === 'all' ? list : list.filter((a) => a.userCode === who.agentCode);
+  if (!wanted.length) throw new Error(who.kind === 'all' ? 'No agents under this login.' : 'This agent isn’t under the login any more.');
+  // A member by user code (rows saved before codes were kept: by username).
+  const match = who.kind === 'member' ? (x) => (x.userCode ? x.userCode === who.code : x.username === who.name) : () => true;
+  const started = Date.now();
+  const perDayMap = new Map();
+  let missing = 0;
+  let error = null;
+  for (const agent of wanted) {
+    const r = await collectDays(group, agent, days, { refresh, budgetMs: Math.max(1000, budgetMs - (Date.now() - started)) });
+    missing = Math.max(missing, r.missing);
+    error ??= r.error;
+    for (const [day, { m1, m3 }] of r.days) {
+      const one = perDayMap.get(day) ?? { day, report: null, send: null };
+      for (const [field, rows] of [['report', m1], ['send', m3]]) {
+        for (const x of rows.filter(match)) one[field] = addInto(one[field] ?? ZERO(), x);
+      }
+      perDayMap.set(day, one);
+    }
+  }
   const report = ZERO();
   const send = ZERO();
-  const perDay = [];
-  for (const day of [...r.days.keys()].sort()) {
-    const { m1, m3 } = r.days.get(day);
-    const one = { day, report: pick(m1), send: pick(m3) };
+  const perDay = [...perDayMap.values()].sort((x, y) => x.day.localeCompare(y.day));
+  for (const one of perDay) {
     addInto(report, one.report);
     addInto(send, one.send);
-    perDay.push(one);
   }
-  const counted = new Set(r.days.keys());
-  return { report, send, perDay, missing: days.filter((d) => !counted.has(d)).length, error: r.error };
+  return { report, send, perDay, missing, error };
 }
 
 /**

@@ -22,8 +22,8 @@ import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
-import { dailyConfig, dayPicker, dayReportScreen } from '../lib/daily.js';
-import { agentListScreen, getAgent, monthScreen, sendAgentExcel } from '../lib/agents.js';
+import { dailyConfig, dayPicker, dayReportScreen, savedAgents, subjectOf, subjectPicker, tokenSubject } from '../lib/daily.js';
+import { agentListScreen, getAgent, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
 import { totalsPicker, totalsScreen } from '../lib/totals.js';
 import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
@@ -141,28 +141,54 @@ export default async function (query) {
     }
 
     const now = today();
-    // 📥 lottery report (lib/daily.js): DREPORT / DRWK_<page> pick a day, DREP_<day> shows it, DREP!_<day> fetches it again.
-    // 💰 its totals (lib/totals.js): TOT picks a period, TOT_D_ / TOT_W_ / TOT_M_ show it.
-    if (key === 'DREPORT' || key.startsWith('DRWK_') || key.startsWith('DREP_') || key.startsWith('DREP!_') || key === 'TOT' || key.startsWith('TOT_')) {
+    // 📥 lottery report (lib/daily.js) and 💰 its totals (lib/totals.js), for a
+    // subject: everyone under the login, an agent or a member, as a trailing
+    // _<who> (user code, or 'a' for everyone; none: the group's default).
+    //   DREPORT / DRWK_<page>[_<who>] pick a day, DREP_<day>[_<who>] shows it,
+    //   DREP!_… fetches it again; TOT[_<who>] picks a period, TOT_D_ / TOT_W_ /
+    //   TOT_M_…[_<who>] show it; DRWHO[_<day>] / TOTWHO pick whose, WHOSYNC
+    //   refreshes the list of agents and members.
+    if (/^(DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/.test(key)) {
       const cfg = await dailyConfig(group.id, { secret: true });
       if (!cfg.enabled) {
         return show('📥 មុខងារនេះមិនទាន់បើកសម្រាប់ក្រុមនេះទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
       }
-      const totals = !!cfg.memberCode && cfg.authType === 'login';
+      const totals = cfg.authType === 'login';
+      const whoOf = (tok) => subjectOf(group.id, tokenSubject(tok) ?? cfg.memberCode);
+      if (key === 'DRWHO' || key.startsWith('DRWHO_') || key === 'TOTWHO' || key === 'WHOSYNC') {
+        let note = '';
+        if (key === 'WHOSYNC' || !(await savedAgents(group.id)).length) {
+          try {
+            await syncAgents(group);
+            if (key === 'WHOSYNC') note = '\n✅ បានទាញបញ្ជីថ្មី';
+          } catch (e) {
+            note = `\n⚠️ ${String(e.message ?? e).slice(0, 200)}`;
+          }
+        }
+        if (key === 'TOTWHO') return showScreen(await subjectPicker(group, { title: '💰 សរុប', target: (t) => `TOT_${t}`, back: 'TOT', note }));
+        const day = /^DRWHO_(\d{4}-\d\d-\d\d)$/.exec(key)?.[1];
+        return showScreen(await subjectPicker(group, { target: (t) => (day ? `DREP_${day}_${t}` : `DRWK_0_${t}`), back: day ? `DREP_${day}` : 'DREPORT', note }));
+      }
       if (key === 'TOT' || key.startsWith('TOT_')) {
         if (!totals) return showScreen(await dayPicker(group));
-        if (key === 'TOT') return showScreen(totalsPicker());
+        const pick = /^TOT(?:_(a|\d{1,20}))?$/.exec(key);
+        if (pick) return showScreen(totalsPicker(await whoOf(pick[1])));
+        const who = await whoOf(/_(a|\d{1,20})$/.exec(key)?.[1]);
         await show('⏳ កំពុងគណនា…');
         try {
-          return showScreen(await totalsScreen(group, cfg, key, { refresh }));
+          return showScreen(await totalsScreen(group, who, key, { refresh }));
         } catch (e) {
           console.error('totals failed', e);
           return show(`⚠️ ${String(e.message ?? e).slice(0, 300)}`, { reply_markup: { inline_keyboard: [[{ text: '🔄 ម្ដងទៀត', callback_data: key }], [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'TOT' }]] } });
         }
       }
-      if (key === 'DREPORT' || key.startsWith('DRWK_')) return showScreen(await dayPicker(group, Number(key.slice(5)) || 0, { totals }));
-      const fresh = key.startsWith('DREP!_');
-      return showScreen(await dayReportScreen(group, key.slice(fresh ? 6 : 5), { refresh: fresh }));
+      if (key === 'DREPORT' || key.startsWith('DRWK_')) {
+        const [, page, tok] = /^DRWK_(\d+)(?:_(a|\d{1,20}))?$/.exec(key) ?? [];
+        return showScreen(await dayPicker(group, Number(page) || 0, { totals, who: await whoOf(tok) }));
+      }
+      const [, bang, day, tok] = /^DREP(!?)_(\d{4}-\d\d-\d\d)(?:_(a|\d{1,20}))?$/.exec(key) ?? [];
+      if (!day) return showScreen(await dayPicker(group, 0, { totals }));
+      return showScreen(await dayReportScreen(group, day, { refresh: !!bang, key: (await whoOf(tok)).key }));
     }
 
     // 📊 Agent Excel (private admin panel only, checked above): XL lists the group's
