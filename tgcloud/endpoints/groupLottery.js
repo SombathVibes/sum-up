@@ -3,8 +3,8 @@
 // 💰 totals, the same numbers as the bot's 💰 សរុប (agent_daily_totals,
 // missing days fetched), and the period of the same length before it. The
 // total reports fill a day only once it settles, so until then today counts
-// with its saved by-draw report, both sides (today / todaySend: those
-// numbers, or null).
+// with its saved by-draw report. Each side (report, and 📤 សាង: send) comes
+// as { total, previous, perDay, today }.
 
 import { addDays, dayKey, dayOf, today } from '../lib/dates.js';
 import { dailyConfig, groupSubject, reportForDay, snapshotTotals, subjectLabel } from '../lib/daily.js';
@@ -42,31 +42,34 @@ export default async function (input, ctx) {
     return { enabled: true, member: subjectLabel(who), error: e.message };
   }
   const prev = await subjectTotals(login, who, before).catch(() => null);
-  const report = pick(cur.report);
-  const send = pick(cur.send);
-  const perDay = cur.perDay.filter((d) => d.report || d.send).map((d) => ({ day: d.day, bet: d.report?.commissionKhr ?? 0, wl: d.report?.winLoseAmountKhr ?? 0 }));
-  // Today before it settles: its by-draw numbers instead.
-  const settled = perDay.some((d) => d.day === todayKey && (d.bet || d.wl));
-  const saved = days.includes(todayKey) && !settled ? await reportForDay(login.id, todayKey, who.key) : null;
-  const has = (t) => t && (t.bet || t.wl) ? t : null;
-  const live = has(snapshotTotals(saved));
-  const liveSend = has(snapshotTotals(saved, { send: true }));
-  const add = (into, t) => Object.assign(into, { bet: into.bet + t.bet, reward: into.reward + t.reward, wl: into.wl + t.wl });
-  if (live) {
-    add(report, live);
-    perDay.push({ day: todayKey, bet: live.bet, wl: live.wl, live: true });
-  }
-  if (liveSend) add(send, liveSend);
+  const saved = days.includes(todayKey) ? await reportForDay(login.id, todayKey, who.key) : null;
+
+  /**
+   * One side (report, or 📤 send): { total, previous, perDay, today }; today
+   * before it settles counts with the saved by-draw report's same side.
+   */
+  const side = (field, send) => {
+    const total = pick(cur[field]);
+    const perDay = cur.perDay.filter((d) => d[field]).map((d) => ({ day: d.day, bet: d[field].commissionKhr, wl: d[field].winLoseAmountKhr }));
+    const settled = perDay.some((d) => d.day === todayKey && (d.bet || d.wl));
+    const live = !settled && saved ? snapshotTotals(saved, { send }) : null;
+    // 📤's settled win/lose is the user's share (send/total-report): checked
+    // against the by-draw report, whose share is winLoseAmountKhrUser.
+    const today = live && (live.bet || live.wl) ? { bet: live.bet, reward: live.reward, wl: send ? live.user : live.wl } : null;
+    if (today) {
+      total.bet += today.bet;
+      total.reward += today.reward;
+      total.wl += today.wl;
+      perDay.push({ day: todayKey, bet: today.bet, wl: today.wl, live: true });
+    }
+    return { total, previous: prev && !prev.missing ? pick(prev[field]) : null, perDay, today };
+  };
 
   return {
     enabled: true,
     member: subjectLabel(who),
-    report,
-    send,
-    previous: prev && !prev.missing ? pick(prev.report) : null,
-    perDay,
-    today: live && { bet: live.bet, reward: live.reward, wl: live.wl },
-    todaySend: liveSend && { bet: liveSend.bet, reward: liveSend.reward, wl: liveSend.wl },
+    report: side('report', false),
+    send: side('send', true),
     missing: cur.missing,
     error: cur.error,
   };
