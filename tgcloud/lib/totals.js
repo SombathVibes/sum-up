@@ -97,7 +97,7 @@ export function totalsPicker(who, { canSwitch = false } = {}) {
   const thisMonday = mondayOf(t);
   const month = t.slice(0, 7);
   return {
-    text: `<b>💰 សរុប</b>\n${escape(subjectLabel(who))}\nជ្រើសរើសរយៈពេល:`,
+    text: `<b>💰 របាយការណ៍សរុប</b>\n${escape(subjectLabel(who))}\nជ្រើសរើសរយៈពេល:`,
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
@@ -105,8 +105,8 @@ export function totalsPicker(who, { canSwitch = false } = {}) {
         [btn('សប្ដាហ៍នេះ', `TOT_W_${thisMonday}${w}`), btn('សប្ដាហ៍មុន', `TOT_W_${dayKey(addDays(parseDayKey(thisMonday), -7))}${w}`)],
         [btn('ខែនេះ', `TOT_M_${month}${w}`), btn('ខែមុន', `TOT_M_${monthKey(addMonths(parseMonthKey(month), -1))}${w}`)],
         ...(canSwitch ? [[btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'TOTWHO')]] : []),
-        [btn(`📋 ${REPORT_NAME} (ប្រចាំវេន)`, `DRWK_0${w}`)],
-        [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
+        [btn('📋 របាយការណ៍ប្រចាំថ្ងៃ', `DRWK_0${w}`)],
+        [btn('⬅️ ត្រឡប់ក្រោយ', 'DRTYPE')],
       ],
     },
   };

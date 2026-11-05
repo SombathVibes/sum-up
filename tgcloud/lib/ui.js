@@ -31,7 +31,7 @@ const SUBSCRIBE_ROW_DAYS = 10;
 export const menuKeyboard = (admin = false, status = null, dailyReport = false, agentExcel = false) => keyboard([
   [btn(`📊 ${BANK_REPORT}`, 'BANK')],
   // Only groups a super admin switched Daily report on for (lib/daily.js).
-  dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DREPORT')] : [],
+  dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DRTYPE')] : [],
   !status || (status.kind !== 'lifetime' && status.daysLeft <= SUBSCRIBE_ROW_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
   agentExcel ? [btn('📊 Excel ភ្នាក់ងារ', 'XL')] : [],
   admin ? [btn('⚙️ Sync', 'SYNC_MENU')] : [],

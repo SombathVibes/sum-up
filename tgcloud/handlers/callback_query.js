@@ -22,7 +22,7 @@ import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
-import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject } from '../lib/daily.js';
+import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject, typePicker } from '../lib/daily.js';
 import { getLogin, listLogins } from '../lib/logins.js';
 import { agentListScreen, getAgent, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
 import { totalsPicker, totalsScreen } from '../lib/totals.js';
@@ -83,6 +83,7 @@ export default async function (query) {
    * whose they show by default; `canSwitch` (only the panel's own 📥, super
    * admins) lets a trailing _<who> (user code, or 'a' for everyone) pick
    * someone else under the login.
+   *   DRTYPE picks the report type (📋 per day or 💰 totals);
    *   DREPORT / DRWK_<page>[_<who>] pick a day, DREP_<day>[_<who>] shows it,
    *   DREP!_… fetches it again; TOT[_<who>] picks a period, TOT_D_ / TOT_W_ /
    *   TOT_M_…[_<who>] show it; DRWHO[_<day>] / TOTWHO pick whose, WHOSYNC
@@ -91,6 +92,7 @@ export default async function (query) {
   const lottery = async (key, { cfg, login, group, mine, canSwitch, refresh }) => {
     // Anyone else only for super admins in the private panel.
     const whoOf = async (tok) => (canSwitch && tokenSubject(tok) !== undefined ? subjectOf(cfg.loginId, tokenSubject(tok)) : mine);
+    if (key === 'DRTYPE') return showScreen(typePicker(mine, { canSwitch }));
     if (/^(DRWHO|TOTWHO|WHOSYNC)/.test(key)) {
       if (!canSwitch) return showScreen(await dayPicker(cfg, mine));
       let note = '';
@@ -102,9 +104,9 @@ export default async function (query) {
           note = `\n⚠️ ${String(e.message ?? e).slice(0, 200)}`;
         }
       }
-      if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 សរុប', target: (t) => `TOT_${t}`, back: 'TOT', note }));
+      if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 របាយការណ៍សរុប', target: (t) => `TOT_${t}`, back: 'DRTYPE', note }));
       const day = /^DRWHO_(\d{4}-\d\d-\d\d)$/.exec(key)?.[1];
-      return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRWK_0_${t}`), back: day ? `DREP_${day}` : 'DREPORT', note }));
+      return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRWK_0_${t}`), back: day ? `DREP_${day}` : 'DRTYPE', note }));
     }
     if (key === 'TOT' || key.startsWith('TOT_')) {
       const pick = /^TOT(?:_(a|\d{1,20}))?$/.exec(key);
@@ -177,10 +179,10 @@ export default async function (query) {
           if (logins.length !== 1) {
             return show(logins.length ? '📥 <b>របាយការណ៍ឆ្នោត</b>\nជ្រើសរើស Login:' : '📥 មិនទាន់មាន Login ឆ្នោតទេ — បន្ថែមនៅ Mini App ⚙️។', {
               parse_mode: 'HTML',
-              reply_markup: { inline_keyboard: [...logins.map((l) => [{ text: `🔑 ${l.username}`, callback_data: `L${l.id}:DRWHO` }]), [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'ADMIN_HOME' }]] },
+              reply_markup: { inline_keyboard: [...logins.map((l) => [{ text: `🔑 ${l.username}`, callback_data: `L${l.id}:DRTYPE` }]), [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'ADMIN_HOME' }]] },
             });
           }
-          [loginScope, data] = [logins[0].id, 'DRWHO'];
+          [loginScope, data] = [logins[0].id, 'DRTYPE'];
         }
         const key = refresh ? data.slice(0, -1) : data;
         const login = await getLogin(loginScope, { secret: true });
@@ -368,7 +370,7 @@ const menu = ({ text, reply_markup }) => [text, { reply_markup }];
 const SLOW_MS = 1500;
 
 /** Buttons of the 📥 lottery report and its 💰 totals (see `lottery` in the handler). */
-const LOTTERY_KEY = /^(DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/;
+const LOTTERY_KEY = /^(DRTYPE|DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/;
 
 /** A failed catch-up still lets the report show what is stored. */
 async function catchUp(group) {
