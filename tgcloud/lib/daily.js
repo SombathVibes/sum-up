@@ -385,16 +385,16 @@ export function snapshotTotals(row, { send = false } = {}) {
 }
 
 /**
- * The final result: the normal win/lose less 📤 សាង's user share (40%), e.g.
- * ៛283,700 − ៛10,800 = ៛272,900 (a 📤 loss adds instead). `share`: the
- * share's label ('40%'), when known.
+ * A report's top line: with 📤 សាង (`send`: its user share, e.g. 40%; null
+ * when there's none), the final result, the normal win/lose less that share,
+ * with how it adds up (៛283,700 − សាង 40% ៛10,800 = ៛272,900; a 📤 loss adds
+ * instead); without, just the normal win/lose. `share`: the share's label.
  */
-export function finalLines(doc, normal, send, share = '') {
+export function resultHead(doc, normal, send = null, share = '') {
+  if (send === null) return doc.bold(profit(normal));
   const label = `សាង${share ? ` ${share}` : ''}`;
-  doc.rule()
-    .bold(`💵 សរុបចុងក្រោយ · ${profit(normal - send)}`)
+  return doc.bold(`💵 សរុបចុងក្រោយ · ${profit(normal - send)}`)
     .line(`៛${riel(normal)} ${send < 0 ? '+' : '−'} ${label} ៛${riel(Math.abs(send))}`);
-  return doc;
 }
 
 /** '📈 ចំណេញ ៛158,500' (positive win/lose is the house's gain) or '📉 ខាត ៛6,600'. */
@@ -426,7 +426,12 @@ function formatLottery(data, prevWl = null, data2 = null) {
 
   const total = lotteryTotals(lotteries);
   const share = lotteries[0].summary;
-  doc.bold(profit(total.wl)).line(`ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`);
+  // The second URL's reply (e.g. isSend=true), when it has draws.
+  const second = lotteriesOf(data2);
+  const t2 = second?.length ? lotteryTotals(second) : null;
+  // On top: the final result (normal less 📤's user share, winLoseAmountKhrUser), or the normal one.
+  resultHead(doc, total.wl, t2 && t2.user, second?.[0]?.summary.userSendShare ?? '');
+  doc.line(`ចាក់ ៛${riel(total.bet)} · សង ៛${riel(total.reward)}`);
   if (total.usd) doc.line(`💵 USD: $${total.usd.toFixed(2)}`);
   // The user/company split, after a blank line, just above the comparison with the day before.
   doc.gap().line(`👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`);
@@ -436,16 +441,11 @@ function formatLottery(data, prevWl = null, data2 = null) {
   }
   lotterySections(doc, lotteries);
 
-  // The second URL's reply (e.g. isSend=true), when it has draws: its own
-  // result and lotteries, below the main ones.
-  const second = lotteriesOf(data2);
-  if (second?.length) {
-    const t2 = lotteryTotals(second);
+  // 📤 សាង's own result and lotteries, below the main ones.
+  if (t2) {
     const draws = second.reduce((n, u) => n + u.items.length, 0);
     doc.rule().bold(`📤 សាង · ${profit(t2.wl)}`).line(`ចាក់ ៛${riel(t2.bet)} · សង ៛${riel(t2.reward)} · ${draws} វេន`);
     lotterySections(doc, second);
-    // The final result: normal less the user's share of 📤 (winLoseAmountKhrUser).
-    finalLines(doc, total.wl, t2.user, second[0].summary.userSendShare ?? '');
   }
   return doc;
 }

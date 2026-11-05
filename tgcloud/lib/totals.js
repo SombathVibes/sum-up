@@ -11,7 +11,7 @@
 
 import { subjectTotals } from './agents.js';
 import { addDays, addMonths, dayKey, monthKey, parseDayKey, parseMonthKey, startOf, today } from './dates.js';
-import { finalLines, subjectLabel, subjectToken } from './daily.js';
+import { resultHead, subjectLabel, subjectToken } from './daily.js';
 import { col, Doc } from './rich.js';
 
 const btn = (text, callback_data, style) => ({ text, callback_data, ...(style ? { style } : {}) });
@@ -129,7 +129,11 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
   if (!r.commissionKhr && !r.winLoseAmountKhr && !s.commissionKhr) {
     doc.line('មិនទាន់មានការចាក់ទេ។');
   } else {
-    doc.bold(profit(r.winLoseAmountKhr)).line(`ចាក់ ៛${riel(r.commissionKhr)}`).line(`សង ៛${riel(r.rewardAmountKhr)}`);
+    // On top: the final result (📤's win/lose here already is the user's
+    // share, send/total-report), or the normal one when there's no 📤.
+    const hasSend = !!(s.commissionKhr || s.winLoseAmountKhr);
+    resultHead(doc, r.winLoseAmountKhr, hasSend ? s.winLoseAmountKhr : null);
+    doc.line(`ចាក់ ៛${riel(r.commissionKhr)}`).line(`សង ៛${riel(r.rewardAmountKhr)}`);
     if (r.winLoseAmountUsd) doc.line(`💵 USD: $${Number(r.winLoseAmountUsd).toFixed(2)}`);
     const before = prev && !prev.missing ? prev.report.winLoseAmountKhr : null;
     if (before) {
@@ -145,11 +149,9 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
     };
     table('report', r);
     // 📤 សាង below, with its own table.
-    if (s.commissionKhr || s.winLoseAmountKhr) {
+    if (hasSend) {
       doc.rule().bold(`📤 សាង · ${profit(s.winLoseAmountKhr)}`).line(`ចាក់ ៛${riel(s.commissionKhr)} · សង ៛${riel(s.rewardAmountKhr)}`);
       table('send', s);
-      // 📤's win/lose here is already the user's share (send/total-report).
-      finalLines(doc, r.winLoseAmountKhr, s.winLoseAmountKhr);
     }
   }
   if (cur.missing) doc.line('').line(`⏳ ទាញបាន ${p.days.length - cur.missing}/${p.days.length} ថ្ងៃ — ចុច «🔄 ទាញថ្មី» ដើម្បីបន្ត។${cur.error ? `\n⚠️ ${escape(cur.error.slice(0, 160))}` : ''}`);
