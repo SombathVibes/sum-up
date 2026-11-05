@@ -50,7 +50,7 @@ export default async function (input, ctx) {
    */
   const side = (field, send) => {
     const total = pick(cur[field]);
-    const perDay = cur.perDay.filter((d) => d[field]).map((d) => ({ day: d.day, bet: d[field].commissionKhr, wl: d[field].winLoseAmountKhr }));
+    const perDay = cur.perDay.filter((d) => d[field]).map((d) => ({ day: d.day, bet: d[field].commissionKhr, reward: d[field].rewardAmountKhr, wl: d[field].winLoseAmountKhr }));
     const settled = perDay.some((d) => d.day === todayKey && (d.bet || d.wl));
     const live = !settled && saved ? snapshotTotals(saved, { send }) : null;
     // 📤's settled win/lose is the user's share (send/total-report): checked
@@ -60,7 +60,7 @@ export default async function (input, ctx) {
       total.bet += today.bet;
       total.reward += today.reward;
       total.wl += today.wl;
-      perDay.push({ day: todayKey, bet: today.bet, wl: today.wl, live: true });
+      perDay.push({ day: todayKey, bet: today.bet, reward: today.reward, wl: today.wl, live: true });
     }
     return { total, previous: prev && !prev.missing ? pick(prev[field]) : null, perDay, today };
   };

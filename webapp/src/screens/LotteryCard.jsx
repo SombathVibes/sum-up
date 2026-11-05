@@ -48,9 +48,9 @@ function SideCard({ title, member, side, missing, error }) {
         <details className="days">
           <summary className="small">ប្រចាំថ្ងៃ ({perDay.length})</summary>
           <table className="table">
-            <thead><tr><th>Day</th><th>Bet</th><th>W/L</th></tr></thead>
+            <thead><tr><th>Day</th><th>Bet</th><th>សង</th><th>W/L</th></tr></thead>
             <tbody>{perDay.map((d) => (
-              <tr key={d.day}><td>{shortDay(d.day)}{d.live ? ' 🔴' : ''}</td><td>{riel(d.bet)}</td><td className={d.wl < 0 ? 'bad' : ''}>{riel(d.wl)}</td></tr>
+              <tr key={d.day}><td>{shortDay(d.day)}{d.live ? ' 🔴' : ''}</td><td>{riel(d.bet)}</td><td>{riel(d.reward)}</td><td className={d.wl < 0 ? 'bad' : ''}>{riel(d.wl)}</td></tr>
             ))}</tbody>
           </table>
         </details>
