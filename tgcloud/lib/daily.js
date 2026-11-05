@@ -1,6 +1,7 @@
-// Daily report: per group (off by default, super admins switch it on), the bot
-// calls the group's URL at each of its times, saves the response, and posts it
-// in the group.
+// Lottery report: per group (off by default, super admins switch it on), the
+// bot signs in to the lottery API (the group's base URL; routes fixed: POST
+// auth/login, GET report/daily-report/all, plus isSend=true for 📤 សាង) at
+// each of its times, saves the reply, and posts it in the group.
 //
 // Telegram Serverless has no timer, so the sync helper's cron (sync-helper/)
 // sends /dailyrun to the bot as the helper's user account (a super admin) at
@@ -31,7 +32,17 @@ export function nowHHMM() {
   return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
 }
 
-const DEFAULTS = { enabled: false, url: '', times: '21:00', postToGroup: true, authType: 'none', loginUrl: '', username: '', password: '', tokenField: '', basicAuth: '', headers: '' };
+const DEFAULTS = { enabled: false, baseUrl: '', sendReport: true, times: '21:00', postToGroup: true, username: '', password: '', basicAuth: '', headers: '' };
+
+// The lottery API's routes under the base URL.
+const LOGIN_PATH = 'auth/login';
+const REPORT_PATH = 'report/daily-report/all';
+
+/** The base ('https://…/api/v1.0.0') from what was typed: the base itself, or any URL under it. */
+export function normalizeBase(text) {
+  const t = String(text ?? '').trim();
+  return (/^(https?:\/\/[^\s?#]+?\/api\/v[\d.]+)(?:[/?#]|$)/.exec(t)?.[1] ?? t).replace(/\/+$/, '');
+}
 
 const parseTimes = (s) => String(s ?? '').split(',').filter((t) => TIME.test(t));
 
@@ -43,17 +54,14 @@ function toConfig(row, secret) {
   const r = row ?? DEFAULTS;
   const cfg = {
     enabled: !!r.enabled,
-    url: r.url,
-    url2: r.url2 ?? '',
+    baseUrl: r.baseUrl ?? '',
+    sendReport: r.sendReport !== false,
     memberCode: r.memberCode ?? '',
     memberName: r.memberName ?? '',
     agentCode: r.agentCode ?? '',
     times: parseTimes(r.times),
     postToGroup: !!r.postToGroup,
-    authType: r.authType === 'login' ? 'login' : 'none',
-    loginUrl: r.loginUrl ?? '',
     username: r.username ?? '',
-    tokenField: r.tokenField ?? '',
     hasPassword: !!r.password,
     // The Basic value is a client id/secret, shown so it can be checked; the password never is.
     basicAuth: r.basicAuth ?? '',
@@ -73,50 +81,40 @@ export async function dailyConfig(groupId, { secret = false } = {}) {
 /** Checks new values: { values } or { error } naming the bad field. */
 export function checkDaily(input) {
   const enabled = !!input.enabled;
-  const url = String(input.url ?? '').trim();
+  const baseUrl = normalizeBase(input.baseUrl);
   const list = Array.isArray(input.times) ? input.times.map(String) : [];
-  if (url && (!/^https?:\/\/\S+$/.test(url) || url.length > 1000)) return { error: 'url' };
-  if (enabled && !url) return { error: 'url' };
-  const url2 = String(input.url2 ?? '').trim();
-  if (url2 && (!/^https?:\/\/\S+$/.test(url2) || url2.length > 1000)) return { error: 'url2' };
+  if (baseUrl && (!/^https?:\/\/\S+$/.test(baseUrl) || baseUrl.length > 500)) return { error: 'baseUrl' };
+  if (enabled && !baseUrl) return { error: 'baseUrl' };
   if (!list.length || list.length > MAX_TIMES || !list.every((t) => TIME.test(t))) return { error: 'times' };
   const times = [...new Set(list)].sort();
-  // The bound member: user codes are digits; the name is only for showing.
+  // The default subject: user codes are digits; the name is only for showing.
   const memberCode = String(input.memberCode ?? '').trim();
   const agentCode = String(input.agentCode ?? '').trim();
   if (!/^\d{0,20}$/.test(memberCode) || !/^\d{0,20}$/.test(agentCode) || (memberCode && !agentCode)) return { error: 'member' };
   const memberName = memberCode ? String(input.memberName ?? '').trim().slice(0, 80) : '';
-  const values = { enabled, url, url2, memberCode, memberName, agentCode: memberCode ? agentCode : '', times, postToGroup: input.postToGroup !== false, authType: 'none', loginUrl: '', username: '', tokenField: '' };
-  if (input.authType === 'login') {
-    const loginUrl = String(input.loginUrl ?? '').trim();
-    const username = String(input.username ?? '').trim();
-    const tokenField = String(input.tokenField ?? '').trim();
-    if (!/^https?:\/\/\S+$/.test(loginUrl) || loginUrl.length > 1000) return { error: 'loginUrl' };
-    if (!username || username.length > 200) return { error: 'username' };
-    if (!/^[\w.]{0,100}$/.test(tokenField)) return { error: 'tokenField' };
-    Object.assign(values, { authType: 'login', loginUrl, username, tokenField });
-  }
-  // Empty secrets keep the saved ones; switching sign-in (or Basic auth) off forgets them.
+  const username = String(input.username ?? '').trim();
+  if ((baseUrl && !username) || username.length > 200) return { error: 'username' };
+  const values = { enabled, baseUrl, sendReport: input.sendReport !== false, memberCode, memberName, agentCode: memberCode ? agentCode : '', times, postToGroup: input.postToGroup !== false, username };
+  // An empty password keeps the saved one.
   const password = String(input.password ?? '');
   if (password.length > 500) return { error: 'password' };
-  if (values.authType === 'none') values.password = '';
-  else if (password) values.password = password;
+  if (password) values.password = password;
   // Extra headers: 'Name: value' lines; blank lines are dropped.
   const headerLines = String(input.headers ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
   if (headerLines.length > 20 || !headerLines.every((l) => /^[A-Za-z0-9-]{1,64}\s*:\s*[^\r\n]{0,500}$/.test(l))) return { error: 'headers' };
   values.headers = headerLines.map((l) => l.replace(/\s*:\s*/, ': ')).join('\n');
-  // Basic auth: the generated value, with or without the 'Basic ' prefix.
+  // Basic auth on the login: the generated value, with or without the 'Basic ' prefix.
   const basicAuth = String(input.basicAuth ?? '').trim().replace(/^Basic\s+/i, '');
   if (basicAuth && (!/^[A-Za-z0-9+/=_-]+$/.test(basicAuth) || basicAuth.length > 1000)) return { error: 'basicAuth' };
-  if (values.authType === 'none' || !input.useBasic) values.basicAuth = '';
+  if (!input.useBasic) values.basicAuth = '';
   else if (basicAuth) values.basicAuth = basicAuth;
-  values.useBasic = values.authType === 'login' && !!input.useBasic;
+  values.useBasic = !!input.useBasic;
   return { values };
 }
 
 export async function saveDailyConfig(groupId, values) {
   const saved = await dailyConfig(groupId);
-  if (values.authType === 'login' && !('password' in values) && !saved.hasPassword) {
+  if (values.baseUrl && !('password' in values) && !saved.hasPassword) {
     throw Object.assign(new Error('password'), { field: 'password' });
   }
   if (values.useBasic && !('basicAuth' in values) && !saved.hasBasicAuth) {
@@ -231,28 +229,13 @@ export const subjectToken = (key) => key || 'a';
 export const tokenSubject = (tok) => (tok === 'a' ? '' : /^\d{1,20}$/.test(tok ?? '') ? tok : undefined);
 
 /**
- * The URL for a day and subject: {date}, {group}, {member} (the subject's user
- * code) and {level} filled in; and when it has filterByUserCode (the lottery
- * API), that and filterByLevel set to the subject, so one URL serves everyone,
- * an agent or a member.
+ * The by-draw report URL for a day and subject (its user code and level: a
+ * member, an agent, or the login itself for everyone); `send`: the 📤 សាង side.
  */
-export function buildUrl(url, day, group, subject = {}) {
-  const code = subject.code ?? '';
-  const filled = url
-    .replaceAll('{date}', encodeURIComponent(day))
-    .replaceAll('{group}', encodeURIComponent(String(group.tgId)))
-    .replaceAll('{member}', encodeURIComponent(code))
-    .replaceAll('{level}', encodeURIComponent(subject.level ?? ''));
-  if (!code) return filled;
-  try {
-    const u = new URL(filled);
-    if (!u.searchParams.has('filterByUserCode')) return filled;
-    u.searchParams.set('filterByUserCode', code);
-    if (u.searchParams.has('filterByLevel') && subject.level) u.searchParams.set('filterByLevel', subject.level);
-    return u.toString();
-  } catch {
-    return filled;
-  }
+export function reportUrl(cfg, day, subject, send = false) {
+  const q = new URLSearchParams({ filterByUserCode: subject.code ?? '', filterByReportType: 'ONE', filterByDate: day, filterByLevel: subject.level || 'agent' });
+  if (send) q.set('isSend', 'true');
+  return `${cfg.baseUrl}/${REPORT_PATH}?${q}`;
 }
 
 /** A dotted path ('data.token') out of a parsed reply. */
@@ -295,7 +278,7 @@ const extraHeaders = (cfg) => Object.fromEntries(String(cfg.headers ?? '').split
 async function signIn(cfg, signal) {
   const headers = { ...extraHeaders(cfg), 'Content-Type': 'application/json', Accept: 'application/json' };
   if (cfg.basicAuth) headers.Authorization = `Basic ${cfg.basicAuth}`;
-  const res = await fetch(cfg.loginUrl, {
+  const res = await fetch(`${cfg.baseUrl}/${LOGIN_PATH}`, {
     method: 'POST',
     headers,
     body: JSON.stringify({ username: cfg.username, password: cfg.password }),
@@ -309,8 +292,7 @@ async function signIn(cfg, signal) {
   } catch {
     throw new Error('Login reply is not JSON');
   }
-  const paths = cfg.tokenField ? [cfg.tokenField] : TOKEN_FIELDS;
-  for (const path of paths) {
+  for (const path of TOKEN_FIELDS) {
     const token = pick(data, path);
     if (typeof token === 'string' && token) return token;
   }
@@ -320,35 +302,34 @@ async function signIn(cfg, signal) {
 }
 
 /**
- * GET requests signed in the way the group's source says: extra headers, and
- * for 'login' the saved token, logging in when there is none or it has
- * expired, and once more when a call with the saved token answers 401. Calls
+ * GET requests signed in: extra headers and the saved token, logging in
+ * when there is none or it has expired, and once more when a call with the saved token answers 401. Calls
  * may run in parallel; they share one login. Returns request(url) → Response,
  * with request.token() → the current token (logging in if needed).
  */
 export function openSession(group, cfg, signal) {
-  let token = cfg.authType === 'login' && cfg.token && !tokenExpired(cfg.token) ? cfg.token : null;
+  let token = cfg.token && !tokenExpired(cfg.token) ? cfg.token : null;
   let pending = null;
   const fresh = () => (pending ??= (async () => {
     token = await signIn(cfg, signal);
     await db.update(groupLotterySettings).set({ token }).where(eq(groupLotterySettings.groupId, group.id)).run();
   })().finally(() => { pending = null; }));
   const request = async (url) => {
-    if (cfg.authType === 'login' && !token) await fresh();
+    if (!token) await fresh();
     const used = token;
     const call = () => fetch(url, {
       headers: { ...extraHeaders(cfg), Accept: 'application/json, text/plain', ...(token && { Authorization: `Bearer ${token}` }) },
       signal,
     });
     let res = await call();
-    if (res.status === 401 && cfg.authType === 'login') {
+    if (res.status === 401) {
       if (token === used) await fresh(); // else another call already logged in again
       res = await call();
     }
     return res;
   };
   request.token = async () => {
-    if (cfg.authType === 'login' && !token) await fresh();
+    if (!token) await fresh();
     return token;
   };
   return request;
@@ -368,8 +349,8 @@ export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today(
   const failure = (e) => (e?.name === 'AbortError' ? `No answer in ${TIMEOUT_MS / 1000}s` : String(e?.message ?? e).slice(0, 300));
 
   const request = openSession(group, cfg, controller.signal);
-  const get = async (rawUrl) => {
-    const res = await request(buildUrl(rawUrl, day, group, who));
+  const get = async (send) => {
+    const res = await request(reportUrl(cfg, day, who, send));
     const text = await res.text();
     const body = (res.ok && compactLottery(text)) || text.slice(0, MAX_BODY);
     return { res, body, error: res.ok ? null : `HTTP ${res.status}${replyReason(body)}` };
@@ -377,11 +358,11 @@ export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today(
 
   try {
     who = await loginSubject(who, request);
-    const first = await get(cfg.url);
+    const first = await get(false);
     Object.assign(row, { httpStatus: first.res.status, ok: first.res.ok, body: first.body, error: first.error });
-    if (row.ok && cfg.url2) {
+    if (row.ok && cfg.sendReport) {
       try {
-        const second = await get(cfg.url2);
+        const second = await get(true);
         Object.assign(row, { body2: second.body, error2: second.error });
       } catch (e) {
         row.error2 = failure(e);
@@ -425,7 +406,7 @@ export async function runDue() {
   await pruneSnapshots();
   for (const cfg of await enabledConfigs()) {
     const slot = parseTimes(cfg.times).filter((t) => t <= hhmm).at(-1);
-    if (!slot || !cfg.url) continue;
+    if (!slot || !cfg.baseUrl) continue;
     // Already ran for this time (or later, e.g. a manual run) today, for the default subject.
     const { key } = await subjectOf(cfg.groupId, cfg.memberCode ?? '');
     if (((await reportForDay(cfg.groupId, day, key))?.slot ?? '') >= slot) continue;

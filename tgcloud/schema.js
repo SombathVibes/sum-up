@@ -101,28 +101,23 @@ export const adminGroups = table('admin_groups', {
 export const groupLotterySettings = table('group_lottery_settings', {
   groupId:     integer('group_id').primaryKey(),
   enabled:     boolean('enabled').notNull().default(false),
-  url:         text('url').notNull().default(''),
-  // Optional second report URL, fetched on every run with the same login and
-  // headers and saved alongside (snapshot body2), e.g. the same report with
-  // isSend=true.
-  url2:        text('url2').notNull().default(''),
-  // The lottery member this group follows (its user code; agent_code is the
-  // member's agent): {member} in the URLs, and the 💰 សរុប totals.
+  // The lottery API's base ('https://…/api/v1.0.0'); the routes are fixed:
+  // POST auth/login, GET report/daily-report/all (lib/daily.js).
+  baseUrl:     text('base_url').notNull().default(''),
+  // Also fetch the 📤 សាង side (the same report with isSend=true), saved
+  // alongside (draw_reports.body2).
+  sendReport:  boolean('send_report').notNull().default(true),
   memberCode:  text('member_code').notNull().default(''),
   memberName:  text('member_name').notNull().default(''),
   agentCode:   text('agent_code').notNull().default(''),
   times:       text('times').notNull().default('21:00'),
   postToGroup: boolean('post_to_group').notNull().default(true),
-  // Sign-in for APIs that need it. 'login': POST { username, password } as
-  // JSON to login_url, take the token from the reply (token_field, a dotted
-  // path, or a usual name like token / access_token / data.token) and call
-  // url with 'Authorization: Bearer <token>'. The password never leaves the
-  // bot: the Mini App only learns whether one is saved.
-  authType:    text('auth_type').notNull().default('none'), // 'none' | 'login'
-  loginUrl:    text('login_url').notNull().default(''),
+  // The lottery login: POST { username, password } as JSON to auth/login; the
+  // token comes back in the reply and goes on every call as
+  // 'Authorization: Bearer <token>'. The password never leaves the bot: the
+  // Mini App only learns whether one is saved.
   username:    text('username').notNull().default(''),
   password:    text('password').notNull().default(''),
-  tokenField:  text('token_field').notNull().default(''),
   // Optional HTTP Basic auth on the login request itself: the ready-made
   // credentials (base64 of 'id:secret', without 'Basic '). Shown in the Mini
   // App so it can be checked (unlike password).
@@ -151,7 +146,7 @@ export const drawReports = table('draw_reports', {
   httpStatus: integer('http_status').notNull().default(0),
   body:       text('body').notNull().default(''),
   error:      text('error'),
-  // The second URL's reply (group_lottery_settings.url2), stored the same way; empty when there is none.
+  // The 📤 សាង side (isSend=true, group_lottery_settings.send_report), stored the same way; empty when off.
   body2:      text('body2').notNull().default(''),
   error2:     text('error2'),
   // Whose report it is: a member's or agent's user code, '' for everyone under

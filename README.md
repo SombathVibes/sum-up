@@ -54,16 +54,28 @@ A web app inside Telegram for admins (`webapp/`, Vite + React), hosted by Telegr
 
 ## 📥 Lottery report (per group, off by default)
 
-A report the bot fetches from another API on a schedule, shown in the group as **📥 របាយការណ៍ឆ្នោត**. A super admin switches it on per group in the Mini App (group → **📥 ឆ្នោត**) and sets, in order: ① Login and headers, ② URLs (**📋** fills both lottery URLs from the login URL, with `{member}`, `{date}` and `{level}`; a URL with a user code typed in is flagged, with a one-tap fix), ③ who: the agents and members found under the login (🔄 refreshes them) and the ⭐ default, ④ times, ⑤ post to group. **🧪** test-runs for the default, everyone, an agent or any member; the recent results show whose each one is.
+A report the bot fetches from the lottery API on a schedule, shown in the group as **📥 របាយការណ៍ឆ្នោត**. A super admin switches it on per group in the Mini App (group → **📥 ឆ្នោត**). The settings come in four steps that fold, each showing a one-line summary when closed:
 
-- **URL:** what the bot calls. `{date}` becomes the day (`YYYY-MM-DD`, Phnom Penh) and `{group}` the group's Telegram id, e.g. `https://example.com/report?date={date}&shop={group}`.
-- **Second URL** (optional): fetched on every run right after the first, with the same login and headers, and saved in the same snapshot (`body2`), e.g. the same report with `&isSend=true`. For the lottery report it's shown at the bottom as **📤 សាង** (its result, bet and payout, and its lotteries), on days it has draws.
-- **Extra headers:** one `Name: value` per line, sent on both the login and the report call.
-- **🔐 Login** (optional): the bot POSTs `{ "username", "password" }` as JSON to the login URL, takes the token from the reply (`token`, `access_token`, `data.accessToken`, … or the field set under *Advanced*) and calls the URL with `Authorization: Bearer <token>`. If the login URL also wants HTTP Basic auth, paste the generated value (`Basic …`, with or without the prefix). The token is saved and reused; the bot logs in again only when there is none, when a JWT's `exp` has passed, or when the report call answers 401 (then once, with one retry). Saving the settings clears it. The password is never sent back to the Mini App (it shows only that one is saved; leave it blank to keep it).
-- **Times:** up to 24 a day, Phnom Penh time: once a day, every 1–12 hours between two hours, or picked by hand.
-- **Post to group:** also send each result to the group (otherwise it's only saved).
+1. **🔗 API and login.**
+   - **API URL:** only the base (`https://…/api/v1.0.0`). Pasting any URL under it keeps just the base. The routes are fixed in the bot: `POST auth/login` and `GET report/daily-report/all`; the agents, members and totals calls hang off the same base.
+   - **Login:** username and password, sent as JSON. If the login also wants HTTP Basic auth, paste the generated value (`Basic …`, with or without the prefix). The token is found in the reply by its usual names. It is saved and reused, and the bot logs in again only when there is none, when a JWT's `exp` has passed, or when a call answers 401 (then once, with one retry). Saving the settings clears it. The password is never sent back to the Mini App: it shows only that one is saved, and leaving the field blank keeps it.
+   - **Extra headers:** one `Name: value` per line (e.g. `platformtype: p99l`), sent on every call.
+   - **📤 សាង:** also fetch the same report with `isSend=true`. It's saved with it (`body2`) and shown at the bottom: its result, bet and payout, and its lotteries, on days it has draws.
+2. **Who:** the agents and members found under the login (🔄 refreshes them), and the ⭐ default (see below).
+3. **Times:** up to 24 a day, Phnom Penh time. Pick once a day, every 1–12 hours between two hours, or times by hand.
+4. **Post to group:** also send each result to the group. Otherwise it's only saved.
 
-**Whose report:** everyone under the login (👥 ទាំងអស់), one agent (🧑‍💼, listed when the login has more than one) or one member (👤). `{member}` in a URL becomes that user's code and `{level}` its level; a URL with `filterByUserCode` (the lottery API) gets that and `filterByLevel` set for whoever is picked, so one URL serves all of them (one call at agent or login level returns every member's draws added up). The **default** (Mini App step ①, 👤, optional) is what the scheduled runs fetch and post and what the bot opens first; unset, it's everyone. In the bot, **🔀 ប្តូរអ្នក** picks someone else: their report is fetched once when first opened and saved like the default's (`draw_reports` has one row per group, day and subject).
+**🧪** test-runs for the default, everyone, an agent or any member. The recent results show whose each one is.
+
+**Whose report.** It can be everyone under the login (👥 ទាំងអស់), one agent (🧑‍💼, listed when the login has more than one), or one member (👤). The report call gets `filterByUserCode` and `filterByLevel` for whoever is picked:
+
+| Who | `filterByUserCode` | `filterByLevel` |
+|---|---|---|
+| A member | the member's code | `member` |
+| An agent | the agent's code | `agent` |
+| Everyone | the login's own code, from its token | the login's role, e.g. `master` |
+
+One call at agent or login level returns every member's draws added up. The ⭐ default is optional: it is what the scheduled runs fetch and post, and what the bot opens first. Unset, it's everyone. In the bot, **🔀 ប្តូរអ្នក** picks someone else. Their report is fetched once when first opened, then saved like the default's (`draw_reports` has one row per group, day and subject).
 
 **💰 សរុប (totals):** from the 📥 day picker, the totals of whoever is picked (everyone, an agent or a member) for a day, a week (Mon–Sun) or a month: bet (2D/3D/4D), payout, 📈 ចំណេញ / 📉 ខាត, the change from the period before, 📤 សាង, and for a week or month the days in a folded table. The numbers are the members' rows of `report/` and `send/total-report/all` (an agent or everyone: all its members added up), read from the same `agent_daily_totals` the agent Excel saves, which already holds every member (missing or out-of-date days are fetched and reused by both; today's row is reused for 5 minutes, 🔄 fetches it again). Checked: the saved days added up equal the API's own range totals.
 

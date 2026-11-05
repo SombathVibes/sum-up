@@ -1,10 +1,10 @@
-// A group's lottery report (super admins), in five steps: the sign-in (and
-// extra headers), the URLs to call (📋 fills the lottery API's from the login
-// URL), whose report is the default (everyone under the login, or one member;
-// the agents and members found under the login are listed), when to call it
-// (once a day, every few hours, or hand-picked times, Phnom Penh), and whether
-// to post the result in the group. Then a test run for anyone, and the recent
-// reports the bot saved (one per day and person).
+// A group's lottery report (super admins), in four steps that fold: the API
+// and login (the base URL; the routes are fixed in the bot) and whether to
+// fetch 📤 សាង too, whose report is the default (everyone under the login, or
+// one member; the agents and members found under the login are listed), when
+// to call it (once a day, every few hours, or hand-picked times, Phnom Penh),
+// and whether to post the result in the group. Then a test run for anyone,
+// and the recent reports the bot saved (one per day and person).
 
 import { useEffect, useState } from 'react';
 import { call } from '../api.js';
@@ -12,24 +12,14 @@ import { timeOf } from '../format.js';
 
 const STEPS = [1, 2, 3, 4, 6, 12];
 const FIELD_ERRORS = {
-  url: 'សូមដាក់ URL ត្រឹមត្រូវ (https://…)',
-  url2: 'URL ទី២ មិនត្រឹមត្រូវ (https://…)',
+  baseUrl: 'សូមដាក់ API URL ត្រឹមត្រូវ (https://…/api/v1.0.0)',
   member: 'សមាជិកមិនត្រឹមត្រូវ',
   times: 'សូមជ្រើសម៉ោងយ៉ាងហោចណាស់មួយ',
-  loginUrl: 'សូមដាក់ Login URL ត្រឹមត្រូវ (https://…)',
   username: 'សូមដាក់ Username',
   password: 'សូមដាក់ Password',
-  tokenField: 'ឈ្មោះ token field មិនត្រឹមត្រូវ',
   basicAuth: 'សូមដាក់ Basic auth (តម្លៃដែលបានបង្កើត)',
   headers: 'Header ត្រូវតែជា «Name: value» មួយបន្ទាត់ម្ដង',
 };
-/** The lottery API's base ('…/api/v1.0.0') from a login URL, or null. */
-const apiBase = (loginUrl) => /^(https?:\/\/.+?\/api\/v[\d.]+)\//.exec(loginUrl ?? '')?.[1] ?? null;
-const lotteryUrl = (base) => `${base}/report/daily-report/all?filterByUserCode={member}&filterByReportType=ONE&filterByDate={date}&filterByLevel={level}`;
-/** A user code typed into a URL instead of {member}. */
-const FIXED_CODE = /filterByUserCode=\d+/;
-const unfix = (url) => url.replace(FIXED_CODE, 'filterByUserCode={member}');
-
 const KH_DIGITS = '០១២៣៤៥៦៧៨៩';
 const kh = (n) => String(n).replace(/\d/g, (d) => KH_DIGITS[d]);
 const hh = (h) => `${String(h).padStart(2, '0')}:00`;
@@ -126,9 +116,8 @@ export default function DailyPanel({ group }) {
   const set = (patch) => { setForm({ ...form, ...patch }); setNote(null); setError(null); };
   const dirty = JSON.stringify(form) !== JSON.stringify({ ...data.config, password: '', useBasic: data.config.hasBasicAuth });
   const saved = data.config;
-  const base = form.authType === 'login' ? apiBase(form.loginUrl) : null;
   const memberCount = people.reduce((n, a) => n + a.members.length, 0);
-  const savedLogin = saved.authType === 'login';
+  const savedLogin = !!saved.baseUrl;
 
   const pickMode = (m) => {
     setMode(m);
@@ -142,7 +131,6 @@ export default function DailyPanel({ group }) {
     set({ times: every(next.step, next.from, next.to) });
   };
   const addTime = () => !form.times.includes(newTime) && set({ times: [...form.times, newTime].sort() });
-  const insert = (token) => set({ url: form.url + token });
   const pickDefault = (code) => {
     const hit = people.flatMap((a) => a.members.map((m) => ({ ...m, agentCode: a.agentCode }))).find((m) => m.userCode === code);
     set({ memberCode: code, memberName: hit?.username ?? '', agentCode: hit?.agentCode ?? '' });
@@ -169,9 +157,8 @@ export default function DailyPanel({ group }) {
   };
 
   const status = !saved.enabled ? '⏸ បិទ' : `✅ បើក · ${kh(saved.times.length)} ដង/ថ្ងៃ · បន្ទាប់: ${nextRun(saved.times)}`;
-  const fixed = [form.url, form.url2].some((u) => FIXED_CODE.test(u));
-  const sumLogin = form.authType === 'login' ? `🔐 ${form.username || '—'}${form.useBasic ? ' · Basic' : ''}${form.headers ? ` · ${kh(form.headers.split('\n').length)} header` : ''}` : 'មិនត្រូវការ Login';
-  const sumUrls = !form.url ? 'មិនទាន់មាន URL' : `${fixed ? '⚠️ មានលេខកូដសរសេរជាប់ · ' : ''}URL ១${form.url2 ? ' + URL ២' : ''}`;
+  const host = (() => { try { return new URL(form.baseUrl).host; } catch { return ''; } })();
+  const sumLogin = !form.baseUrl ? 'មិនទាន់មាន API URL' : `${host} · 🔐 ${form.username || '—'}${form.useBasic ? ' · Basic' : ''}${form.headers ? ` · ${kh(form.headers.split('\n').length)} header` : ''}${form.sendReport ? ' · 📤 សាង' : ''}`;
   const sumWho = `⭐ ${form.memberCode ? form.memberName || form.memberCode : '👥 ទាំងអស់'}${people.length ? ` · 🧑‍💼 ${kh(people.length)} · 👤 ${kh(memberCount)}` : ''}`;
   const sumWhen = form.times.length ? `${kh(form.times.length)} ដង/ថ្ងៃ · ${form.times.length > 1 ? `${form.times[0]}–${form.times.at(-1)}` : form.times[0]}` : 'មិនទាន់មានម៉ោង';
   const memberLabel = (m) => `${m.username}${m.nickname ? ` · ${m.nickname}` : ''}`;
@@ -189,93 +176,56 @@ export default function DailyPanel({ group }) {
         </div>
       </section>
 
-      <Step n={1} title="🔐 Login" summary={sumLogin} start={!savedLogin && !saved.url}>
-        <div className="row">
-          <div className="grow muted small">{form.authType === 'login' ? 'Login មុន រួចហៅ URL ជាមួយ token' : 'API មិនត្រូវការ Login'}</div>
-          <Switch on={form.authType === 'login'} onChange={(on) => set({ authType: on ? 'login' : 'none' })} label="Login" />
-        </div>
-        {form.authType === 'login' && (
-          <div className="login">
-            <label className="label">
-              <span className="muted small">Login URL (POST)</span>
-              <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                placeholder="https://example.com/api/v1.0.0/auth/login" value={form.loginUrl} onChange={(e) => set({ loginUrl: e.target.value })} />
-            </label>
-            <label className="label">
-              <span className="muted small">Username</span>
-              <input className="field" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoComplete="off"
-                value={form.username} onChange={(e) => set({ username: e.target.value })} />
-            </label>
-            <label className="label">
-              <span className="muted small">Password {data.config.hasPassword && <span className="ok">· បានរក្សាទុក ✓</span>}</span>
-              <div className="row">
-                <input className="field grow" type={showPw ? 'text' : 'password'} autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                  placeholder={data.config.hasPassword ? 'ទុកទទេ ដើម្បីប្រើដដែល' : ''} value={form.password} onChange={(e) => set({ password: e.target.value })} />
-                <button type="button" className="icon" onClick={() => setShowPw(!showPw)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? '🙈' : '👁'}</button>
-              </div>
-            </label>
-            <div className="row">
-              <div className="grow">
-                <div className="small">Basic auth លើ Login</div>
-                <div className="muted small">បិទភ្ជាប់តម្លៃ Basic ដែលបានបង្កើតរួច</div>
-              </div>
-              <Switch on={form.useBasic} onChange={(useBasic) => set({ useBasic, basicAuth: useBasic ? data.config.basicAuth : '' })} label="Basic auth" />
-            </div>
-            {form.useBasic && (
-              <label className="label">
-                <span className="muted small">Basic auth (តម្លៃដែលបានបង្កើត)</span>
-                <input className="field mono" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                  placeholder="Basic dXNlcjpwYXNz…" value={form.basicAuth} onChange={(e) => set({ basicAuth: e.target.value })} />
-              </label>
-            )}
-            <details>
-              <summary className="muted small">កម្រិតខ្ពស់</summary>
-              <label className="label">
-                <span className="muted small">Token field (ទុកទទេ = រកដោយស្វ័យប្រវត្តិ: token, access_token, data.token…)</span>
-                <input className="field" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-                  placeholder="data.accessToken" value={form.tokenField} onChange={(e) => set({ tokenField: e.target.value })} />
-              </label>
-            </details>
-          </div>
-        )}
+      <Step n={1} title="🔗 API និង Login" summary={sumLogin} start={!saved.baseUrl}>
         <label className="label">
-          <span className="muted small">Header បន្ថែម (Login និង URL) · មួយបន្ទាត់ម្ដង «Name: value»</span>
+          <span className="muted small">API URL (ឧ. https://…/api/v1.0.0) · Login និង Report ប្រើផ្លូវថេរ</span>
+          <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+            placeholder="https://example.com/api/v1.0.0" value={form.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
+        </label>
+        <div className="login">
+          <label className="label">
+            <span className="muted small">Username</span>
+            <input className="field" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoComplete="off"
+              value={form.username} onChange={(e) => set({ username: e.target.value })} />
+          </label>
+          <label className="label">
+            <span className="muted small">Password {data.config.hasPassword && <span className="ok">· បានរក្សាទុក ✓</span>}</span>
+            <div className="row">
+              <input className="field grow" type={showPw ? 'text' : 'password'} autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                placeholder={data.config.hasPassword ? 'ទុកទទេ ដើម្បីប្រើដដែល' : ''} value={form.password} onChange={(e) => set({ password: e.target.value })} />
+              <button type="button" className="icon" onClick={() => setShowPw(!showPw)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? '🙈' : '👁'}</button>
+            </div>
+          </label>
+          <div className="row">
+            <div className="grow">
+              <div className="small">Basic auth លើ Login</div>
+              <div className="muted small">បិទភ្ជាប់តម្លៃ Basic ដែលបានបង្កើតរួច</div>
+            </div>
+            <Switch on={form.useBasic} onChange={(useBasic) => set({ useBasic, basicAuth: useBasic ? data.config.basicAuth : '' })} label="Basic auth" />
+          </div>
+          {form.useBasic && (
+            <label className="label">
+              <span className="muted small">Basic auth (តម្លៃដែលបានបង្កើត)</span>
+              <input className="field mono" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+                placeholder="Basic dXNlcjpwYXNz…" value={form.basicAuth} onChange={(e) => set({ basicAuth: e.target.value })} />
+            </label>
+          )}
+        </div>
+        <label className="label">
+          <span className="muted small">Header បន្ថែម · មួយបន្ទាត់ម្ដង «Name: value»</span>
           <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false}
             placeholder="platformtype: p99l" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
         </label>
-      </Step>
-
-      <Step n={2} title="URL ដែលត្រូវហៅ" summary={sumUrls} warn={fixed} start={!saved.url}>
-        {base && (
-          <button type="button" className="btn small" onClick={() => set({ url: lotteryUrl(base), url2: `${lotteryUrl(base)}&isSend=true` })}>
-            📋 ប្រើ URL ឆ្នោត (ទាំងពីរ) ពី Login URL
-          </button>
-        )}
-        <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          placeholder="https://example.com/report?date={date}" value={form.url} onChange={(e) => set({ url: e.target.value })} />
-        <div className="chips">
-          <button className="chip" onClick={() => insert('{date}')}>+ {'{date}'} <span className="muted">ថ្ងៃ</span></button>
-          <button className="chip" onClick={() => insert('{member}')}>+ {'{member}'} <span className="muted">លេខកូដអ្នក</span></button>
-          <button className="chip" onClick={() => insert('{level}')}>+ {'{level}'} <span className="muted">កម្រិត</span></button>
-          <button className="chip" onClick={() => insert('{group}')}>+ {'{group}'} <span className="muted">ID ក្រុម</span></button>
-        </div>
-        <label className="label">
-          <span className="muted small">URL ទី២ (ស្រេចចិត្ត) · ឧ. isSend=true សម្រាប់ 📤 សាង</span>
-          <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-            placeholder="https://example.com/report?date={date}&isSend=true" value={form.url2} onChange={(e) => set({ url2: e.target.value })} />
-          {form.url && !form.url2 && (
-            <button type="button" className="chip" onClick={() => set({ url2: `${form.url}${form.url.includes('?') ? '&' : '?'}isSend=true` })}>+ ចម្លង URL ទី១ + isSend=true</button>
-          )}
-        </label>
-        {fixed && (
-          <div className="row warn">
-            <span className="grow small">⚠️ URL មានលេខកូដសរសេរជាប់ (filterByUserCode=…)។ ប្រើ {'{member}'} ដើម្បីឲ្យប្តូរតាមអ្នកដែលជ្រើស។</span>
-            <button type="button" className="btn small" onClick={() => set({ url: unfix(form.url), url2: unfix(form.url2) })}>ជួសជុល</button>
+        <div className="row">
+          <div className="grow">
+            <div className="small">📤 ទាញ សាង ផងដែរ</div>
+            <div className="muted small">isSend=true · បង្ហាញខាងក្រោមរបាយការណ៍</div>
           </div>
-        )}
+          <Switch on={form.sendReport} onChange={(sendReport) => set({ sendReport })} label="សាង" />
+        </div>
       </Step>
 
-      <Step n={3} title="អ្នកណា" summary={sumWho} start={savedLogin && !people.length}>
+      <Step n={2} title="អ្នកណា" summary={sumWho} start={savedLogin && !people.length}>
         <div className="row">
           <div className="grow muted small">
             {people.length ? `🧑‍💼 ${kh(people.length)} ភ្នាក់ងារ · 👤 ${kh(memberCount)} សមាជិក នៅក្រោម Login` : 'មិនទាន់មានបញ្ជី — ចុច 🔄'}
@@ -313,7 +263,7 @@ export default function DailyPanel({ group }) {
         </label>
       </Step>
 
-      <Step n={4} title={<>ពេលណា <span className="muted small">(ម៉ោងភ្នំពេញ)</span></>} summary={sumWhen} start={!saved.url}>
+      <Step n={3} title={<>ពេលណា <span className="muted small">(ម៉ោងភ្នំពេញ)</span></>} summary={sumWhen} start={!saved.baseUrl}>
         <div className="segmented small">
           <button className={mode === 'once' ? 'on' : ''} onClick={() => pickMode('once')}>ម្ដង/ថ្ងៃ</button>
           <button className={mode === 'every' ? 'on' : ''} onClick={() => pickMode('every')}>រៀងរាល់…ម៉ោង</button>
@@ -363,7 +313,7 @@ export default function DailyPanel({ group }) {
         )}
       </Step>
 
-      <Step n={5} title="ផ្ញើទៅក្រុម" summary={form.postToGroup ? '✅ ផ្ញើទៅក្រុម' : '⏸ រក្សាទុកតែប៉ុណ្ណោះ'} start={!saved.url}>
+      <Step n={4} title="ផ្ញើទៅក្រុម" summary={form.postToGroup ? '✅ ផ្ញើទៅក្រុម' : '⏸ រក្សាទុកតែប៉ុណ្ណោះ'} start={!saved.baseUrl}>
         <div className="row">
           <div className="grow muted small">{form.postToGroup ? 'ផ្ញើលទ្ធផលរបស់ ⭐ លំនាំដើម ទៅក្រុម ហើយរក្សាទុក' : 'រក្សាទុកតែប៉ុណ្ណោះ (មើលតាម 📥 ក្នុង /menu)'}</div>
           <Switch on={form.postToGroup} onChange={(postToGroup) => set({ postToGroup })} label="Post to group" />
@@ -390,16 +340,16 @@ export default function DailyPanel({ group }) {
             </select>
           </label>
           <div className="row">
-            <button className="icon grow" disabled={!!busy || !saved.url} onClick={() => run(false)}>{busy === 'test' ? 'កំពុងហៅ…' : '🧪 សាកល្បង'}</button>
-            <button className="icon grow" disabled={!!busy || !saved.url} onClick={() => run(true)}>{busy === 'post' ? 'កំពុងហៅ…' : '▶️ ដំណើរការឥឡូវ'}</button>
+            <button className="icon grow" disabled={!!busy || !saved.baseUrl} onClick={() => run(false)}>{busy === 'test' ? 'កំពុងហៅ…' : '🧪 សាកល្បង'}</button>
+            <button className="icon grow" disabled={!!busy || !saved.baseUrl} onClick={() => run(true)}>{busy === 'post' ? 'កំពុងហៅ…' : '▶️ ដំណើរការឥឡូវ'}</button>
           </div>
         </>
       )}
-      {!dirty && !saved.url && <p className="muted small center-text">ដាក់ URL ហើយរក្សាទុក ដើម្បីសាកល្បង។</p>}
+      {!dirty && !saved.baseUrl && <p className="muted small center-text">ដាក់ API URL និង Login ហើយរក្សាទុក ដើម្បីសាកល្បង។</p>}
 
       <section className="card">
         <strong>🧾 លទ្ធផលថ្មីៗ</strong>
-        {!data.reports.length && <p className="muted small">មិនទាន់មានទេ។ ចុច 🧪 សាកល្បង ដើម្បីមើលអ្វីដែល URL ផ្ញើមក។</p>}
+        {!data.reports.length && <p className="muted small">មិនទាន់មានទេ។ ចុច 🧪 សាកល្បង ដើម្បីមើលអ្វីដែល API ផ្ញើមក។</p>}
         <ul className="payments">
           {data.reports.map((r) => {
             const key = `${r.day} ${r.subject}`;
@@ -414,7 +364,7 @@ export default function DailyPanel({ group }) {
                     <pre className="body">{r.body || '—'}</pre>
                     {(r.body2 || r.error2) && (
                       <>
-                        <div className="muted small">URL ទី២{r.error2 ? ` · ⚠️ ${r.error2}` : ''}</div>
+                        <div className="muted small">📤 សាង{r.error2 ? ` · ⚠️ ${r.error2}` : ''}</div>
                         {r.body2 && <pre className="body">{r.body2}</pre>}
                       </>
                     )}

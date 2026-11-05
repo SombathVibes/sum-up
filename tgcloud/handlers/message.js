@@ -62,7 +62,7 @@ export default async function (message) {
         const signedIn = [];
         for (const g of await listGroups()) {
           const cfg = await dailyConfig(g.id);
-          if (cfg.enabled && cfg.authType === 'login') signedIn.push(g);
+          if (cfg.enabled && cfg.baseUrl) signedIn.push(g);
         }
         await collectYesterday(signedIn);
         // Quiet when everything worked; failures are worth a message.

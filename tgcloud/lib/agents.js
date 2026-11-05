@@ -42,12 +42,6 @@ export { TEMPLATE_KEY, TEMPLATE_NAME_KEY };
 const num = (v) => Number(v) || 0;
 const totalBet = (r) => [1, 2, 3, 4, 5].reduce((n, d) => n + num(r[`betAmount${d}DKhr`]) + num(r[`betAmount${d}DUsd`]), 0);
 
-/** The API's base ('…/api/v1.0.0') from the source's login URL. */
-function apiBase(cfg) {
-  const m = /^(https?:\/\/.+?\/api\/v[\d.]+)\//.exec(cfg.loginUrl || cfg.url);
-  if (!m) throw new Error('Set the 📥 report login first (login URL …/api/v1.0.0/auth/login).');
-  return m[1];
-}
 
 /** The logged-in user's code from a JWT (userCode / user_code), or null. */
 function tokenUserCode(token) {
@@ -63,8 +57,8 @@ function tokenUserCode(token) {
 /** A signed-in JSON getter for a group, from its 📥 report source. */
 async function sessionFor(group) {
   const cfg = await dailyConfig(group.id, { secret: true });
-  if (cfg.authType !== 'login') throw new Error('Set the 📥 report login for this group first.');
-  const base = apiBase(cfg);
+  if (!cfg.baseUrl) throw new Error('Set the 📥 report API URL and login for this group first.');
+  const base = cfg.baseUrl;
   const request = openSession(group, cfg);
   const json = async (path, params) => {
     const url = `${base}/${path}?${new URLSearchParams(params)}`;

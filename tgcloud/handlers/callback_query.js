@@ -153,7 +153,7 @@ export default async function (query) {
       if (!cfg.enabled) {
         return show('📥 មុខងារនេះមិនទាន់បើកសម្រាប់ក្រុមនេះទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
       }
-      const totals = cfg.authType === 'login';
+      const totals = !!cfg.baseUrl;
       const whoOf = (tok) => subjectOf(group.id, tokenSubject(tok) ?? cfg.memberCode);
       if (key === 'DRWHO' || key.startsWith('DRWHO_') || key === 'TOTWHO' || key === 'WHOSYNC') {
         let note = '';
@@ -217,7 +217,7 @@ export default async function (query) {
         const status = await accessStatus(group);
         const cfg = await dailyConfig(group.id);
         // 📊 Excel ភ្នាក់ងារ only in the private panel, for groups whose report signs in.
-        const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled, !!scopedId && cfg.authType === 'login');
+        const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled, !!scopedId && !!cfg.baseUrl);
         // In the private panel: the group's name on top, and a way back to all groups.
         if (scopedId) {
           return show(`${await groupTitle(group)}\n${menuText(status)}`, {
