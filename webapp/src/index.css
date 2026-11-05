@@ -142,3 +142,20 @@ details summary { cursor: pointer; padding: 4px 0; }
 .lottery .final .big { display: block; font-size: 22px; }
 .lottery .side { border-top: 1px solid var(--line, rgba(127, 127, 127, .2)); margin-top: 10px; padding-top: 8px; }
 .lottery-line { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line, rgba(127, 127, 127, .2)); }
+
+/* Loading placeholders (components/Skeleton.jsx): shimmering bars, theme-aware */
+.sk {
+  height: 12px;
+  margin: 10px 0;
+  border-radius: 6px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, currentColor 7%, transparent) 25%,
+    color-mix(in srgb, currentColor 16%, transparent) 37%,
+    color-mix(in srgb, currentColor 7%, transparent) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+.sk-title { width: 45%; height: 16px; margin-top: 2px; }
+.sk-chart { height: 44px; border-radius: 8px; }
+@keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+@media (prefers-reduced-motion: reduce) { .sk { animation: none; } }

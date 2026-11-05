@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api.js';
 import { riel, shortDay } from '../format.js';
+import { SkeletonCard } from '../components/Skeleton.jsx';
 
 const profit = (wl) => (wl < 0 ? `📉 ខាត ${riel(-wl)}` : `📈 ចំណេញ ${riel(wl)}`);
 
@@ -54,13 +55,14 @@ export default function LotteryCard({ groupId, range }) {
       {data?.member && <span className="muted small">{data.member}</span>}
     </div>
   );
+  // Loading: a placeholder in the summary's shape (missing days may be fetched first).
+  if (!data && !error) return <SkeletonCard lines={4} className="lottery" />;
   if (!data || !data.report) {
     return (
       <section className="card lottery">
         {head}
         {error && <p className="error">{error.message}</p>}
         {data?.error && <p className="error">{data.error}</p>}
-        {!data && !error && <p className="muted small">កំពុងផ្ទុក…</p>}
       </section>
     );
   }

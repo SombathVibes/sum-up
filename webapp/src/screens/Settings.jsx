@@ -8,6 +8,7 @@ import { call } from '../api.js';
 import { money } from '../format.js';
 import Fold from './Fold.jsx';
 import Logins from './Logins.jsx';
+import Skeleton from '../components/Skeleton.jsx';
 
 const FIELDS = [
   ['bank', '🏦 ធនាគារ', 40],
@@ -76,7 +77,7 @@ export default function Settings() {
   useEffect(() => { call('settings').then(fill, setError); }, []);
 
   if (error && !data) return <main className="content"><p className="error">{error.message}</p></main>;
-  if (!form) return <main className="content"><p className="center muted">កំពុងផ្ទុក…</p></main>;
+  if (!form) return <main className="content"><Skeleton cards={3} /></main>;
 
   const set = (key) => (e) => { setForm({ ...form, [key]: e.target.value }); setSaved(null); };
   const dirty = JSON.stringify({ ...form, price: priceCents(form.price) }) !== JSON.stringify(data.payment);

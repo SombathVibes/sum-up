@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api.js';
 import { Switch, kh } from './Logins.jsx';
+import Skeleton from '../components/Skeleton.jsx';
 
 export default function DailyPanel({ group }) {
   const [data, setData] = useState(null);
@@ -17,7 +18,7 @@ export default function DailyPanel({ group }) {
   useEffect(() => { load(); }, [group.tgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (error && !data) return <main className="content"><p className="error">{error.message}</p></main>;
-  if (!form) return <main className="content"><p className="center muted">កំពុងផ្ទុក…</p></main>;
+  if (!form) return <main className="content"><Skeleton cards={2} /></main>;
 
   const set = (patch) => { setForm({ ...form, ...patch }); setNote(null); setError(null); };
   const dirty = JSON.stringify(form) !== JSON.stringify(data.config);

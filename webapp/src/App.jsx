@@ -10,6 +10,7 @@ import Group from './screens/Group.jsx';
 import Groups from './screens/Groups.jsx';
 import Settings from './screens/Settings.jsx';
 import Team from './screens/Team.jsx';
+import Skeleton from './components/Skeleton.jsx';
 
 const tg = window.Telegram?.WebApp;
 
@@ -45,7 +46,8 @@ export default function App() {
       </div>
     );
   }
-  if (!groups) return <div className="center muted">កំពុងផ្ទុក…</div>;
+  // The group list's shape while it loads: a few group cards with their charts.
+  if (!groups) return <main className="content"><Skeleton cards={4} chart lines={1} /></main>;
 
   const group = open && groups.find((g) => g.tgId === open.tgId);
   if (group) {

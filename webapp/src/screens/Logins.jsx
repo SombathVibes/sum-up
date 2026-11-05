@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api.js';
 import Fold from './Fold.jsx';
+import { SkeletonCard } from '../components/Skeleton.jsx';
 
 const KH_DIGITS = '០១២៣៤៥៦៧៨៩';
 export const kh = (n) => String(n).replace(/\d/g, (d) => KH_DIGITS[d]);
@@ -225,7 +226,8 @@ export default function Logins() {
       .finally(() => setBusy(null));
   };
 
-  if (!logins) return <Fold title="🔑 Login ឆ្នោត" summary={error ? `⚠️ ${error.message}` : 'កំពុងផ្ទុក…'} />;
+  if (!logins && !error) return <SkeletonCard lines={2} />;
+  if (!logins) return <Fold title="🔑 Login ឆ្នោត" summary={`⚠️ ${error.message}`} />;
   const running = logins.filter((l) => l.enabled).length;
   return (
     <Fold title="🔑 Login ឆ្នោត" summary={logins.length ? `${kh(logins.length)} Login · ${kh(running)} កំពុងដំណើរការ · ${logins.map((l) => l.username).join(', ')}` : 'មិនទាន់មាន Login'} start={!logins.length}>

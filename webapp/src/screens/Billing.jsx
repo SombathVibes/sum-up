@@ -90,7 +90,7 @@ export function BillingPanel({ group, onChanged }) {
       <section className="card">
         <strong>🧾 ប្រវត្តិ</strong>
         {error && <p className="error">{error.message}</p>}
-        {!history && !error && <p className="muted">កំពុងផ្ទុក…</p>}
+        {!history && !error && <><div className="sk sk-line" style={{ width: '88%' }} /><div className="sk sk-line" style={{ width: '72%' }} /><div className="sk sk-line" style={{ width: '80%' }} /></>}
         <ul className="payments">
           {history?.map((p) => (
             <li key={`${p.start}-${p.end}`} className="row">

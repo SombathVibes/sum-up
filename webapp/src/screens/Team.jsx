@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { call } from '../api.js';
+import Skeleton from '../components/Skeleton.jsx';
 
 const tg = window.Telegram?.WebApp;
 const ROLES = [[null, '—'], ['view', '👁 មើល'], ['manage', '🛠 គ្រប់គ្រង']];
@@ -32,7 +33,7 @@ export default function Team({ me }) {
   }, [open]);
 
   if (error) return <main className="content"><p className="error">{error.message}</p></main>;
-  if (!team) return <main className="content"><p className="center muted">កំពុងផ្ទុក…</p></main>;
+  if (!team) return <main className="content"><Skeleton cards={3} /></main>;
 
   const admin = open && team.admins.find((a) => a.userId === open);
   if (admin) return <Member admin={admin} groups={team.groups} me={me} onBack={() => setOpen(null)} onChanged={load} />;
