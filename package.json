@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "devDependencies": {
-    "@tgcloud/cli": "^0.2.0"
+    "@tgcloud/cli": "^0.2.0",
+    "wrangler": "^4.156.2"
   },
   "scripts": {
     "deploy": "npm run build && tgcloud push",
@@ -12,6 +13,10 @@
     "test": "node test/lib.test.js",
     "dev": "node --env-file-if-exists=.env.local dev/run.js",
     "build": "npm --prefix webapp run build",
-    "webapp": "npm --prefix webapp run dev"
+    "webapp": "npm --prefix webapp run dev",
+    "cf:gen": "node --no-warnings cloudflare/gen.mjs",
+    "cf:export": "node --no-warnings cloudflare/export-local.mjs",
+    "cf:dev": "npm run cf:gen && npm run build && wrangler d1 migrations apply sumup --local && wrangler dev",
+    "cf:deploy": "npm run cf:gen && npm run build && wrangler d1 migrations apply sumup --remote && wrangler deploy"
   }
 }

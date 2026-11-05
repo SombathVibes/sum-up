@@ -1,0 +1,21 @@
+-- Written by cloudflare/gen.mjs from tgcloud/schema.js — do not edit.
+CREATE TABLE IF NOT EXISTS "admin_groups" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "user_id" INTEGER NOT NULL, "group_id" INTEGER NOT NULL, "role" TEXT NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_admin_groups" ON "admin_groups" ("user_id", "group_id");
+CREATE INDEX IF NOT EXISTS "idx_admin_groups_group" ON "admin_groups" ("group_id");
+CREATE TABLE IF NOT EXISTS "admins" ("user_id" INTEGER PRIMARY KEY, "name" TEXT, "username" TEXT, "is_super" INTEGER NOT NULL DEFAULT 0, "added_by" INTEGER NOT NULL, "created_at" INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE TABLE IF NOT EXISTS "agent_daily_totals" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "agent_code" TEXT NOT NULL, "day" TEXT NOT NULL, "data" TEXT NOT NULL, "fetched_at" INTEGER NOT NULL DEFAULT 0);
+CREATE UNIQUE INDEX IF NOT EXISTS "agent_daily_totals_code_day_uniq" ON "agent_daily_totals" ("agent_code", "day");
+CREATE TABLE IF NOT EXISTS "agents" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "login_id" INTEGER NOT NULL, "user_code" TEXT NOT NULL, "username" TEXT NOT NULL, "nickname" TEXT NOT NULL DEFAULT '', "members" TEXT NOT NULL DEFAULT '[]');
+CREATE UNIQUE INDEX IF NOT EXISTS "agents_login_code_uniq" ON "agents" ("login_id", "user_code");
+CREATE TABLE IF NOT EXISTS "draw_reports" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "login_id" INTEGER NOT NULL, "day" TEXT NOT NULL, "subject" TEXT NOT NULL DEFAULT '', "ran_at" INTEGER NOT NULL, "ok" INTEGER NOT NULL DEFAULT 0, "http_status" INTEGER NOT NULL DEFAULT 0, "body" TEXT NOT NULL DEFAULT '', "error" TEXT, "body2" TEXT NOT NULL DEFAULT '', "error2" TEXT);
+CREATE UNIQUE INDEX IF NOT EXISTS "draw_reports_login_day_subject_uniq" ON "draw_reports" ("login_id", "day", "subject");
+CREATE TABLE IF NOT EXISTS "group_lottery_settings" ("group_id" INTEGER PRIMARY KEY, "enabled" INTEGER NOT NULL DEFAULT 0, "login_id" INTEGER NOT NULL DEFAULT 0, "member_code" TEXT NOT NULL DEFAULT '', "member_name" TEXT NOT NULL DEFAULT '', "agent_code" TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS "groups" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "tg_id" INTEGER NOT NULL UNIQUE, "name" TEXT, "status" TEXT NOT NULL DEFAULT 'active', "lifetime" INTEGER NOT NULL DEFAULT 0, "last_message_id" INTEGER NOT NULL DEFAULT 0, "last_synced_at" INTEGER NOT NULL DEFAULT 0, "billing_status" TEXT NOT NULL DEFAULT '', "billing_user_id" INTEGER NOT NULL DEFAULT 0, "created_at" INTEGER NOT NULL DEFAULT (unixepoch()));
+CREATE TABLE IF NOT EXISTS "lottery_logins" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "enabled" INTEGER NOT NULL DEFAULT 1, "base_url" TEXT NOT NULL DEFAULT '', "username" TEXT NOT NULL DEFAULT '', "password" TEXT NOT NULL DEFAULT '', "basic_auth" TEXT NOT NULL DEFAULT '', "headers" TEXT NOT NULL DEFAULT '', "send_report" INTEGER NOT NULL DEFAULT 1, "times" TEXT NOT NULL DEFAULT '21:00', "token" TEXT NOT NULL DEFAULT '', "ran_day" TEXT NOT NULL DEFAULT '', "ran_slot" TEXT NOT NULL DEFAULT '');
+CREATE TABLE IF NOT EXISTS "messages" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "group_id" INTEGER NOT NULL, "tg_message_id" INTEGER NOT NULL, "bot_tg_id" INTEGER NOT NULL, "amount" INTEGER NOT NULL, "currency" TEXT NOT NULL, "message_date" INTEGER NOT NULL, "original_message" TEXT NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_messages_payment" ON "messages" ("group_id", "bot_tg_id", "message_date", "original_message");
+CREATE INDEX IF NOT EXISTS "idx_messages_report" ON "messages" ("group_id", "message_date", "bot_tg_id", "currency", "amount");
+CREATE INDEX IF NOT EXISTS "idx_messages_tg" ON "messages" ("group_id", "tg_message_id");
+CREATE TABLE IF NOT EXISTS "settings" ("key" TEXT PRIMARY KEY, "value" TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS "subscriptions" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "group_id" INTEGER NOT NULL, "start_date" INTEGER NOT NULL, "end_date" INTEGER NOT NULL, "source" TEXT NOT NULL DEFAULT 'manual', "price" INTEGER NOT NULL DEFAULT 0, "currency" TEXT NOT NULL DEFAULT '', "is_trial" INTEGER NOT NULL DEFAULT 0, "payer_id" INTEGER, "recorded_by" INTEGER, "charge_id" TEXT UNIQUE);
+CREATE INDEX IF NOT EXISTS "idx_subscriptions_group" ON "subscriptions" ("group_id", "end_date");

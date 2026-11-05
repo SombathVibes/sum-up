@@ -1,0 +1,35 @@
+// The bot on Cloudflare Workers (branch `cloudflare`; main stays on Telegram
+// Serverless). cloudflare/README.md has the steps: npm run cf:gen, create the
+// D1 database, set the secrets, deploy, then POST /setup for the webhook.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sumup-bot",
+  "main": "cloudflare/worker.js",
+  "compatibility_date": "2026-10-01",
+  // The bot code imports Telegram Serverless's `sdk`; here it's cloudflare/sdk.
+  "alias": {
+    "sdk": "./cloudflare/sdk/index.js",
+    "sdk/api": "./cloudflare/sdk/index.js",
+    "sdk/fetch": "./cloudflare/sdk/index.js",
+    "sdk/db": "./cloudflare/sdk/db.js"
+  },
+  // The admin Mini App (npm run build); /telegram, /api/* and /setup reach the Worker first.
+  "assets": {
+    "directory": "./webapp/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/telegram", "/api/*", "/setup"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "sumup",
+      // From `npx wrangler d1 create sumup`.
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "cloudflare/migrations"
+    }
+  ],
+  // Every minute: the lottery logins' schedule and yesterday's agent days.
+  "triggers": { "crons": ["* * * * *"] },
+  "observability": { "enabled": true }
+}
