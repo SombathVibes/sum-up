@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { call } from '../api.js';
 import { money } from '../format.js';
+import Fold from './Fold.jsx';
 import Logins from './Logins.jsx';
 
 const FIELDS = [
@@ -95,8 +96,7 @@ export default function Settings() {
 
       {data.billingMode !== 'manual' && <p className="muted small">⚠️ BILLING_MODE = '{data.billingMode}' — ព័ត៌មានគណនីនេះប្រើតែពេលបង់ដោយដៃ។</p>}
 
-      <section className="card">
-        <strong>💵 តម្លៃប្រចាំខែ / ក្រុម</strong>
+      <Fold title="💵 តម្លៃប្រចាំខែ / ក្រុម" summary={`${form.price || '—'} ${form.currency}`}>
         <div className="row">
           <input className="field grow" inputMode="decimal" value={form.price} onChange={set('price')} />
           <div className="segmented small">
@@ -106,10 +106,9 @@ export default function Settings() {
           </div>
         </div>
         <p className="muted small">ប្រើពេលកត់ត្រាការបន្ត (Renew) និងបង្ហាញលើ ⭐ ការជាវ។</p>
-      </section>
+      </Fold>
 
-      <section className="card">
-        <strong>🏦 ព័ត៌មានបង់ប្រាក់</strong>
+      <Fold title="🏦 ព័ត៌មានបង់ប្រាក់" summary={[form.bank, form.accountName, form.accountNumber].filter(Boolean).join(' · ') || 'មិនទាន់កំណត់'}>
         {FIELDS.map(([key, label, max]) => (
           <label key={key} className="label">
             <span className="muted small">{label}</span>
@@ -120,15 +119,14 @@ export default function Settings() {
           <span className="muted small">📝 សេចក្តីណែនាំ</span>
           <textarea className="field" rows={3} value={form.instructions} maxLength={500} onChange={set('instructions')} />
         </label>
-      </section>
+      </Fold>
 
-      <section className="card">
-        <strong>📎 ឯកសារ</strong>
+      <Fold title="📎 ឯកសារ" summary={`🖼 QR ${data.hasQr ? '✓' : '—'} · 📊 Template ${data.template ? '✓' : '—'}`}>
         <Upload icon="🖼" title="QR បង់ប្រាក់ (PNG / JPG)" accept="image/png,image/jpeg" kind="qr" current={data.hasQr}
           onDone={() => setData({ ...data, hasQr: true })} />
         <Upload icon="📊" title="Template Excel ភ្នាក់ងារ (.xlsx)" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" kind="template" current={data.template}
           onDone={(r) => setData({ ...data, template: r.name })} />
-      </section>
+      </Fold>
 
       {error && <p className="error">{error.message}</p>}
       {saved && <p className="small">{saved}</p>}

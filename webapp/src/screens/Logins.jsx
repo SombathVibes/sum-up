@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from 'react';
 import { call } from '../api.js';
+import Fold from './Fold.jsx';
 
 const KH_DIGITS = '០១២៣៤៥៦៧៨៩';
 export const kh = (n) => String(n).replace(/\d/g, (d) => KH_DIGITS[d]);
@@ -224,10 +225,10 @@ export default function Logins() {
       .finally(() => setBusy(null));
   };
 
-  if (!logins) return <section className="card"><strong>🔑 Login ឆ្នោត</strong><p className="muted small">{error ? error.message : 'កំពុងផ្ទុក…'}</p></section>;
+  if (!logins) return <Fold title="🔑 Login ឆ្នោត" summary={error ? `⚠️ ${error.message}` : 'កំពុងផ្ទុក…'} />;
+  const running = logins.filter((l) => l.enabled).length;
   return (
-    <section className="card">
-      <strong>🔑 Login ឆ្នោត</strong>
+    <Fold title="🔑 Login ឆ្នោត" summary={logins.length ? `${kh(logins.length)} Login · ${kh(running)} កំពុងដំណើរការ · ${logins.map((l) => l.username).join(', ')}` : 'មិនទាន់មាន Login'} start={!logins.length}>
       <p className="muted small">Login នីមួយៗទាញទិន្នន័យតាមម៉ោងរបស់វា៖ របាយការណ៍ទាំងអស់ សមាជិកដែលក្រុមតាមដាន និងសរុបសមាជិកទាំងអស់។ ក្រុមជ្រើសតែសមាជិក (📥 ឆ្នោត)។</p>
       {logins.map((l) => (editing === l.id ? (
         <LoginForm key={l.id} login={l} onCancel={() => setEditing(null)}
@@ -259,6 +260,6 @@ export default function Logins() {
       ) : (
         <button className="btn small" onClick={() => setEditing('new')}>➕ បន្ថែម Login</button>
       )}
-    </section>
+    </Fold>
   );
 }
