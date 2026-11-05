@@ -160,7 +160,6 @@ export async function fetchReport(login, day, who, { slot = nowHHMM(), request }
   const row = { loginId: login.id, day, subject: who.key, slot, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null, body2: '', error2: null };
   const controller = request ? null : new AbortController();
   const timer = controller && setTimeout(() => controller.abort(), TIMEOUT_MS);
-  const failure = (e) => (e?.name === 'AbortError' ? `No answer in ${TIMEOUT_MS / 1000}s` : String(e?.message ?? e).slice(0, 300));
   request ??= openSession(login, controller.signal);
   const get = async (send) => {
     const res = await request(reportUrl(login, day, who, send));
@@ -185,18 +184,88 @@ export async function fetchReport(login, day, who, { slot = nowHHMM(), request }
   } finally {
     if (timer) clearTimeout(timer);
   }
-  // One row per login, day and subject: replace it, but a failed run keeps the
-  // last good report (only noting the time it ran for).
-  const saved = !row.ok && (await reportForDay(login.id, day, row.subject));
+  await saveReport(row);
+  return Object.assign(row, { who });
+}
+
+const failure = (e) => (e?.name === 'AbortError' ? `No answer in ${TIMEOUT_MS / 1000}s` : String(e?.message ?? e).slice(0, 300));
+
+/**
+ * Saves a fetched report: one row per login, day and subject, replaced; but a
+ * failed fetch keeps the last good report (only noting the time it ran for).
+ */
+async function saveReport(row) {
+  const saved = !row.ok && (await reportForDay(row.loginId, row.day, row.subject));
   if (saved?.ok) {
-    await db.update(drawReports).set({ slot }).where(eq(drawReports.id, saved.id)).run();
+    await db.update(drawReports).set({ slot: row.slot }).where(eq(drawReports.id, saved.id)).run();
   } else {
     const { loginId: _l, day: _d, subject: _s, ...set } = row;
     await db.insert(drawReports).values(row)
       .onConflictDoUpdate({ target: [drawReports.loginId, drawReports.day, drawReports.subject], set })
       .run();
   }
-  return Object.assign(row, { who });
+}
+
+/**
+ * Every member's by-draw report for a day, in one call (two with 📤 សាង): the
+ * member-level report under the login lists one row per member and draw,
+ * named by username (lottery-services AllDailyReportServiceV2), which is split
+ * here into one saved report per member, in the shape a one-member call gives
+ * (memberBody). `members()`: the login's members [{ userCode, username }];
+ * called again with { refresh: true } when the reply has a member with bets
+ * it doesn't know. Returns { count (members saved), error }.
+ */
+export async function fetchMemberReports(login, day, members, { slot = nowHHMM(), request } = {}) {
+  request ??= openSession(login);
+  const get = async (send) => {
+    const q = new URLSearchParams({ filterByReportType: 'ONE', filterByDate: day, filterByLevel: 'member' });
+    if (send) q.set('isSend', 'true');
+    try {
+      const res = await request(`${login.baseUrl}/${REPORT_PATH}?${q}`);
+      const text = await res.text();
+      if (!res.ok) return { status: res.status, error: `HTTP ${res.status}${replyReason(text.slice(0, MAX_BODY))}` };
+      const data = JSON.parse(text);
+      return Array.isArray(data?.data?.items) ? { status: res.status, data } : { status: res.status, error: 'Reply is not a lottery report' };
+    } catch (e) {
+      return { status: 0, error: failure(e) };
+    }
+  };
+  const first = await get(false);
+  const second = !first.error && login.sendReport ? await get(true) : null;
+  let list = await members();
+  const names = new Set(list.map((m) => m.username));
+  const betting = (first.data?.data?.items ?? []).flatMap((it) => it?.upperLineSale?.items ?? []).map((r) => r.username);
+  if (betting.some((u) => u && !names.has(u))) list = await members({ refresh: true });
+  for (const m of list) {
+    await saveReport({
+      loginId: login.id, day, subject: m.userCode, slot, ranAt: now(),
+      ok: !first.error, httpStatus: first.status, body: first.data ? memberBody(first.data, m.username) : '', error: first.error ?? null,
+      body2: second?.data ? memberBody(second.data, m.username) : '', error2: second?.error ?? null,
+    });
+  }
+  return { count: list.length, error: first.error ?? null };
+}
+
+/**
+ * One member's part of a member-level report reply, as the compact JSON text
+ * a one-member call gives (compactLottery): per lottery, that member's draw
+ * rows, and a summary that adds them up (checked against one-member replies:
+ * the same draws and the same totals).
+ */
+export function memberBody(data, username) {
+  const items = [];
+  const totalAmounts = [];
+  const sum = (rows, k) => rows.reduce((n, r) => n + (Number(r[k]) || 0), 0);
+  for (const it of data?.data?.items ?? []) {
+    const u = it?.upperLineSale;
+    const mine = (u?.items ?? []).filter((r) => r.username === username);
+    if (!mine.length) continue;
+    // Amounts add up; the user/company share is the member's, on every row.
+    const summary = Object.fromEntries(SUMMARY_KEYS.map((k) => [k, k.endsWith('Share') ? mine[0][k] : sum(mine, k)]));
+    items.push({ upperLineSale: { lotteryType: u.lotteryType, date: u.date, summary, items: mine.map((d) => pickKeys(d, DRAW_KEYS)) } });
+    totalAmounts.push({ lotteryType: u.lotteryType, totalAmountKhr: sum(mine, 'betAmountKhr'), totalAmountUsd: sum(mine, 'betAmountUsd') });
+  }
+  return JSON.stringify({ data: { items, upperSummary: {}, underSummary: { totalAmounts } } });
 }
 
 /** What groups see this feature called. */

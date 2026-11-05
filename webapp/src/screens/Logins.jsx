@@ -220,7 +220,7 @@ export default function Logins() {
   const run = (l) => {
     setBusy(`run ${l.id}`);
     call('loginRun', { id: l.id })
-      .then((r) => note(l.id, [...r.reports.map((x) => `${x.ok ? '✅' : '⚠️'} ${x.who}${x.ok ? '' : ` — ${x.error}`}`), r.totalsError ? `⚠️ សរុប — ${r.totalsError}` : '✅ សរុបសមាជិក'].join('\n')))
+      .then((r) => note(l.id, [...r.reports.map((x) => `${x.ok ? '✅' : '⚠️'} ${x.who}${x.ok ? '' : ` — ${x.error}`}`), r.members && (r.members.error ? `⚠️ សមាជិក — ${r.members.error}` : `✅ 👤 ${kh(r.members.count)} សមាជិក`), r.totalsError ? `⚠️ សរុប — ${r.totalsError}` : '✅ សរុបសមាជិក'].filter(Boolean).join('\n')))
       .catch((e) => note(l.id, `⚠️ ${e.message}`))
       .finally(() => setBusy(null));
   };
@@ -229,7 +229,7 @@ export default function Logins() {
   const running = logins.filter((l) => l.enabled).length;
   return (
     <Fold title="🔑 Login ឆ្នោត" summary={logins.length ? `${kh(logins.length)} Login · ${kh(running)} កំពុងដំណើរការ · ${logins.map((l) => l.username).join(', ')}` : 'មិនទាន់មាន Login'} start={!logins.length}>
-      <p className="muted small">Login នីមួយៗទាញទិន្នន័យតាមម៉ោងរបស់វា៖ របាយការណ៍ទាំងអស់ សមាជិកដែលក្រុមតាមដាន និងសរុបសមាជិកទាំងអស់។ ក្រុមជ្រើសតែសមាជិក (📥 ឆ្នោត)។</p>
+      <p className="muted small">Login នីមួយៗទាញទិន្នន័យតាមម៉ោងរបស់វា៖ របាយការណ៍ទាំងអស់ របាយការណ៍ និងសរុបរបស់សមាជិកទាំងអស់។ ក្រុមជ្រើសតែសមាជិក (📥 ឆ្នោត)។</p>
       {logins.map((l) => (editing === l.id ? (
         <LoginForm key={l.id} login={l} onCancel={() => setEditing(null)}
           onSaved={(list) => { setLogins(list); setEditing(null); note(l.id, '✅ បានរក្សាទុក'); }}

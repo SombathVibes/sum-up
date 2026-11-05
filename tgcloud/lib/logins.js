@@ -210,6 +210,7 @@ export function openSession(login, signal) {
   let pending = null;
   const fresh = () => (pending ??= (async () => {
     token = await signIn(login, signal);
+    login.token = token; // other sessions opened later on this login reuse it
     await db.update(lotteryLogins).set({ token }).where(eq(lotteryLogins.id, login.id)).run();
   })().finally(() => { pending = null; }));
   const request = async (url) => {

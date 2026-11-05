@@ -166,24 +166,82 @@ async function fetchDay(json, agent, day) {
     json('report/total-report/all', totals),
     json('send/total-report/all', totals),
   ]);
+  const daily = dailyCells((report?.data?.items ?? []).map((it) => [it.lotteryType ?? it.upperLineSale?.lotteryType, it.upperLineSale?.summary]));
+  // A member with bets who isn't in the saved list (a new one): refresh the list, then filter exactly.
+  const looksOurs = (r) => r.username?.startsWith(agent.username) && r.userCode !== agent.userCode;
+  if ([...settlements(m1), ...settlements(m3)].some((r) => !mine.has(r.userCode) && looksOurs(r) && totalBet(r) > 0)) {
+    mine = new Set((await membersOf(json, agent, { refresh: true })).map((m) => m.userCode));
+  }
+  return { daily, m1: memberRows(m1, mine), m3: memberRows(m3, mine) };
+}
+
+const settlements = (reply) => reply?.data?.settlements ?? [];
+
+/** A day tab's cells ({ C4: …, G5: … }) from [lotteryType, summary] pairs. */
+function dailyCells(pairs) {
   const daily = {};
-  for (const item of report?.data?.items ?? []) {
-    const s = item.upperLineSale?.summary;
-    const row = ROW_OF[item.lotteryType];
+  for (const [type, s] of pairs) {
+    const row = ROW_OF[type];
     if (!s || !row) continue;
     for (const [col, field] of Object.entries(DAILY_FIELDS)) if (num(s[field])) daily[`${col}${row}`] = num(s[field]);
   }
-  // A member with bets who isn't in the saved list (a new one): refresh the list, then filter exactly.
-  const looksOurs = (r) => r.username?.startsWith(agent.username) && r.userCode !== agent.userCode;
-  const all = [...(m1?.data?.settlements ?? []), ...(m3?.data?.settlements ?? [])];
-  if (all.some((r) => !mine.has(r.userCode) && looksOurs(r) && totalBet(r) > 0)) {
-    mine = new Set((await membersOf(json, agent, { refresh: true })).map((m) => m.userCode));
+  return daily;
+}
+
+/** The kept fields of a total-report reply's rows for the members in `mine` (user codes) with bets, by username. */
+const memberRows = (reply, mine) => settlements(reply)
+  .filter((r) => mine.has(r.userCode) && totalBet(r) > 0)
+  .sort((a, b) => a.username.localeCompare(b.username))
+  .map((r) => Object.fromEntries([['username', r.username], ['userCode', r.userCode], ...MEMBER_FIELDS.map((f) => [f, num(r[f])])]));
+
+/**
+ * A day's totals for every agent under a login in three calls (the scheduled
+ * run): the agent-level by-draw report (one row per agent and draw, by
+ * username) for the day tab, and report/ and send/total-report/all at member
+ * level with no agent filter, which list every member under the login; each
+ * agent gets its own members' rows, saved as fetchDay would. Returns
+ * { agents (count), error }.
+ */
+export async function collectLoginDay(login, day) {
+  const { json } = sessionFor(login);
+  let list = await loginAgents(login.id);
+  if (!list.length) list = await syncAgents(login);
+  const totals = { filterByLevel: 'member', filterByReportType: 'TOTAL', startDate: day, endDate: day };
+  let replies;
+  try {
+    replies = await Promise.all([
+      json('report/daily-report/all', { filterByReportType: 'ONE', filterByDate: day, filterByLevel: 'agent' }),
+      json('report/total-report/all', totals),
+      json('send/total-report/all', totals),
+    ]);
+  } catch (e) {
+    return { agents: list.length, error: e.message };
   }
-  const memberRows = (reply) => (reply?.data?.settlements ?? [])
-    .filter((r) => mine.has(r.userCode) && totalBet(r) > 0)
-    .sort((a, b) => a.username.localeCompare(b.username))
-    .map((r) => Object.fromEntries([['username', r.username], ['userCode', r.userCode], ...MEMBER_FIELDS.map((f) => [f, num(r[f])])]));
-  return { daily, m1: memberRows(m1), m3: memberRows(m3) };
+  const [report, m1, m3] = replies;
+  const known = () => new Set(list.flatMap((a) => parseList(a.members).map((m) => m.userCode)));
+  if ([...settlements(m1), ...settlements(m3)].some((r) => !known().has(r.userCode) && totalBet(r) > 0)) list = await syncAgents(login);
+  for (const agent of list) {
+    const mine = new Set(parseList(agent.members).map((m) => m.userCode));
+    // The agent's rows per lottery, added up like the agent-level summary.
+    const daily = dailyCells((report?.data?.items ?? []).map((it) => {
+      const u = it.upperLineSale;
+      const rows = (u?.items ?? []).filter((r) => r.username === agent.username);
+      return [it.lotteryType ?? u?.lotteryType, rows.length ? Object.fromEntries(Object.values(DAILY_FIELDS).map((f) => [f, rows.reduce((n, r) => n + num(r[f]), 0)])) : null];
+    }));
+    const row = { data: JSON.stringify({ daily, m1: memberRows(m1, mine), m3: memberRows(m3, mine) }), fetchedAt: now() };
+    await db.insert(agentDailyTotals).values({ agentCode: agent.userCode, day, ...row })
+      .onConflictDoUpdate({ target: [agentDailyTotals.agentCode, agentDailyTotals.day], set: row }).run();
+  }
+  return { agents: list.length, error: null };
+}
+
+function parseList(text) {
+  try {
+    const list = JSON.parse(text || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
 }
 
 const monthDays = (month) => {

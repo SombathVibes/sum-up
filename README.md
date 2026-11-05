@@ -67,11 +67,13 @@ Data comes from the lottery API through **🔑 logins**, and each group follows 
 
 The token is saved on the login and reused. The bot logs in again only when there is none, when a JWT's `exp` has passed, or when a call answers 401 (then once, with one retry). Saving the login clears it. Each login's card has **🔄** (log in and fetch its agents and members again) and **▶️** (run it now, as the schedule would, and show what came back).
 
-**A login's run** saves, with one sign-in:
+**A login's run** saves, with one sign-in, in **5 calls (7 with 📤 សាង) however many agents and members**:
 
-1. everyone's by-draw report under the login (and 📤 សាង);
-2. the by-draw report of each member a group follows (once per member, however many groups follow them);
-3. today's totals for every agent's members (`agent_daily_totals`, 3 calls per agent).
+1. everyone's by-draw report under the login (and 📤): `daily-report/all` at the login's level;
+2. **every member's** by-draw report (and 📤) from one `daily-report/all?filterByLevel=member` call with no user filter. The API lists one row per member and draw, by username (lottery-services `AllDailyReportServiceV2`), and the bot splits it into one saved report per member (`fetchMemberReports`). A new member with bets refreshes the member list first;
+3. today's totals for every agent (`agent_daily_totals`): `daily-report/all?filterByLevel=agent` for the day tab, plus `report/` and `send/total-report/all?filterByLevel=member` with no agent filter, which list every member under the login, split per agent (`collectLoginDay`).
+
+Checked against the old one-member and one-agent calls on a settled day and on today: the same draws, amounts, user/company split and Excel cells.
 
 Nothing is posted to groups; they open 📥 from `/menu`.
 
