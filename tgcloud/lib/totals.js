@@ -123,7 +123,7 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
   const r = cur.report;
   const s = cur.send;
   const doc = new Doc()
-    .title(`💰 សរុប · ${p.label}`)
+    .title(`💰 របាយការណ៍សរុប · ${p.label}`)
     .line(`${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)} · ${escape(subjectLabel(who))}`)
     .line('');
   if (!r.commissionKhr && !r.winLoseAmountKhr && !s.commissionKhr) {

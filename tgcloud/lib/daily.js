@@ -454,7 +454,7 @@ function lotterySections(doc, lotteries) {
 export function formatReport(group, row, prev = null, who = null) {
   const [y, m, d] = row.day.split('-');
   const doc = new Doc()
-    .title(`📥 ${REPORT_NAME} · ${d}/${m}/${y}`)
+    .title(`📋 របាយការណ៍ប្រចាំថ្ងៃ · ${d}/${m}/${y}`)
     .line(`${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)}${who ? ` · ${escape(subjectLabel(who))}` : ''}`)
     .line('');
   const foot = () => {
