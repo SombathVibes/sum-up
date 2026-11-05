@@ -10,7 +10,7 @@
 //     from: '<name>', by: '<admin>', months }.
 
 import { api } from 'sdk';
-import { priceLabel } from './billing.js';
+import { offerLabel, priceFor, priceLabel } from './billing.js';
 import { dayOf, formatKhmerDate } from './dates.js';
 import { canManage, listAdmins, managersOf, roleIn } from './roles.js';
 import { paymentSettings } from './settings.js';
@@ -54,7 +54,7 @@ export async function forwardReceipt(message, group) {
     message.caption ? `💬 ${esc(message.caption.slice(0, 300))}` : null,
   ].filter(Boolean).join('\n');
   const data = (months) => `RCPT_${group.id}_${message.message_id}_${months}`;
-  const months = RENEW_MONTHS.map((m) => ({ text: `✅ ${m} ខែ · ${priceLabel(m, pay)}`, callback_data: data(m), style: 'success' }));
+  const months = RENEW_MONTHS.map((m) => ({ text: `✅ ${m} ខែ · ${offerLabel(m, pay)}`, callback_data: data(m), style: 'success' }));
   const reply_markup = {
     inline_keyboard: [months.slice(0, 2), months.slice(2), [{ text: '❌ មិនទទួល', callback_data: data(0), style: 'danger' }]],
   };
@@ -103,7 +103,7 @@ export async function handleReceiptButton(data, from) {
   let result;
   let label; // the short form, on every admin's copy
   if (months) {
-    const sub = await renewSubscription(group.id, { months, price: pay.price * months, currency: pay.currency, recordedBy: from.id });
+    const sub = await renewSubscription(group.id, { months, price: priceFor(months, pay), currency: pay.currency, recordedBy: from.id });
     const end = dayOf(sub.endDate);
     const until = formatKhmerDate(end);
     result = `✅ បានបន្ត ${months} ខែ (${priceLabel(months, pay)}) ដល់ ${until} · ដោយ ${rec.by}`;

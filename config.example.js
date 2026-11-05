@@ -31,6 +31,8 @@ export const BILLING_MODE = 'manual';
 // Manual billing: monthly price per group, in cents of MANUAL_CURRENCY.
 export const MONTHLY_PRICE_CENTS = 500; // $5.00
 export const MANUAL_CURRENCY = 'USD';
+// Percent off for paying several months at once (changeable in the Mini App ⚙️).
+export const DISCOUNTS = { 3: 10, 6: 15, 12: 25 };
 // Where customers pay. Shown on the subscription screen with the QR image
 // (an admin sends the QR photo to the bot with the caption /setqr).
 export const PAYMENT_BANK = 'ABA';

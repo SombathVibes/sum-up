@@ -16,7 +16,7 @@ const FIELDS = [
   ['accountNumber', '💳 លេខគណនី', 40],
   ['supportLink', '💬 Link ផ្ញើវិក្កយបត្រ (https://t.me/…)', 200],
 ];
-const LABEL = { price: 'តម្លៃ', currency: 'រូបិយប័ណ្ណ', instructions: 'សេចក្តីណែនាំ', bank: 'ធនាគារ', accountName: 'ឈ្មោះគណនី', accountNumber: 'លេខគណនី', supportLink: 'Link' };
+const LABEL = { discounts: 'បញ្ចុះតម្លៃ (%)', price: 'តម្លៃ', currency: 'រូបិយប័ណ្ណ', instructions: 'សេចក្តីណែនាំ', bank: 'ធនាគារ', accountName: 'ឈ្មោះគណនី', accountNumber: 'លេខគណនី', supportLink: 'Link' };
 
 const MAX_UPLOAD = 5 * 1024 * 1024;
 
@@ -65,6 +65,16 @@ function Upload({ icon, title, accept, kind, current, onDone }) {
 /** Hundredths ↔ the text in the price box ('5', '12.5'). */
 const priceText = (cents) => money(cents).replace(/,/g, '');
 const priceCents = (text) => Math.round(Number(String(text).replace(/,/g, '')) * 100);
+// Paying several months at once: percent off for each (lib/settings.js DISCOUNT_MONTHS).
+const DISCOUNT_MONTHS = [3, 6, 12];
+/** The form as the server keeps it: price in hundredths, discounts as numbers. */
+const payload = (form) => ({
+  ...form,
+  price: priceCents(form.price),
+  discounts: Object.fromEntries(DISCOUNT_MONTHS.map((m) => [m, Number(form.discounts?.[m]) || 0])),
+});
+/** What `months` cost after the discount, for the preview: '13.5'. */
+const offer = (form, months) => priceText(Math.round(priceCents(form.price) * months * (100 - (Number(form.discounts?.[months]) || 0)) / 100));
 
 export default function Settings() {
   const [data, setData] = useState(null);
@@ -80,11 +90,11 @@ export default function Settings() {
   if (!form) return <main className="content"><Skeleton cards={3} /></main>;
 
   const set = (key) => (e) => { setForm({ ...form, [key]: e.target.value }); setSaved(null); };
-  const dirty = JSON.stringify({ ...form, price: priceCents(form.price) }) !== JSON.stringify(data.payment);
+  const dirty = JSON.stringify(payload(form)) !== JSON.stringify(data.payment);
   const save = () => {
     setBusy(true);
     setError(null);
-    call('settingsSave', { payment: { ...form, price: priceCents(form.price) } })
+    call('settingsSave', { payment: payload(form) })
       .then((r) => { fill({ ...data, payment: r.payment }); setSaved('✅ បានរក្សាទុក'); })
       .catch((e) => setError(e.parameters?.field ? new Error(`សូមពិនិត្យ «${LABEL[e.parameters.field] ?? e.parameters.field}»`) : e))
       .finally(() => setBusy(false));
@@ -97,7 +107,7 @@ export default function Settings() {
 
       {data.billingMode !== 'manual' && <p className="muted small">⚠️ BILLING_MODE = '{data.billingMode}' — ព័ត៌មានគណនីនេះប្រើតែពេលបង់ដោយដៃ។</p>}
 
-      <Fold title="💵 តម្លៃប្រចាំខែ / ក្រុម" summary={`${form.price || '—'} ${form.currency}`}>
+      <Fold title="💵 តម្លៃប្រចាំខែ / ក្រុម" summary={`${form.price || '—'} ${form.currency} · ${DISCOUNT_MONTHS.map((m) => `${m}ខែ -${Number(form.discounts?.[m]) || 0}%`).join(' · ')}`}>
         <div className="row">
           <input className="field grow" inputMode="decimal" value={form.price} onChange={set('price')} />
           <div className="segmented small">
@@ -107,6 +117,15 @@ export default function Settings() {
           </div>
         </div>
         <p className="muted small">ប្រើពេលកត់ត្រាការបន្ត (Renew) និងបង្ហាញលើ ⭐ ការជាវ។</p>
+        <div className="small"><strong>🏷 បញ្ចុះតម្លៃ ពេលបង់ច្រើនខែ</strong></div>
+        {DISCOUNT_MONTHS.map((m) => (
+          <div key={m} className="row discount">
+            <span className="small">{m} ខែ</span>
+            <input className="field pct" inputMode="numeric" value={form.discounts?.[m] ?? 0}
+              onChange={(e) => { setForm({ ...form, discounts: { ...form.discounts, [m]: e.target.value.replace(/[^\d]/g, '').slice(0, 2) } }); setSaved(null); }} />
+            <span className="muted small">% → {offer(form, m)} {form.currency}</span>
+          </div>
+        ))}
       </Fold>
 
       <Fold title="🏦 ព័ត៌មានបង់ប្រាក់" summary={[form.bank, form.accountName, form.accountNumber].filter(Boolean).join(' · ') || 'មិនទាន់កំណត់'}>

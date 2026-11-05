@@ -20,7 +20,7 @@ import {
 } from '../lib/store.js';
 import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
-import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
+import { accessStatus, offerLabel, priceFor, priceLabel, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject, typePicker } from '../lib/daily.js';
 import { getLogin, listLogins } from '../lib/logins.js';
@@ -469,7 +469,7 @@ async function handleSync(data, chat, show, admin, role) {
 
   if (data === 'RENEW') {
     const pay = await paymentSettings();
-    return show(...menu(renewMenu(name, endLabel, (m) => priceLabel(m, pay))));
+    return show(...menu(renewMenu(name, endLabel, (m) => offerLabel(m, pay))));
   }
 
   if (data === 'LIFETIME') {
@@ -487,7 +487,7 @@ async function handleSync(data, chat, show, admin, role) {
     const pay = await paymentSettings();
     const sub = await renewSubscription(group.id, {
       months,
-      price: pay.price * months,
+      price: priceFor(months, pay),
       currency: pay.currency,
       recordedBy: admin.id,
     });

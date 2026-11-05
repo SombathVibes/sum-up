@@ -2,25 +2,26 @@
 // config.js holds the defaults; super admins can change them in the Mini App,
 // which keeps only the fields that differ from config under settings 'payment'.
 
-import {
-  MANUAL_CURRENCY, MONTHLY_PRICE_CENTS, PAYMENT_ACCOUNT_NAME, PAYMENT_ACCOUNT_NUMBER, PAYMENT_BANK,
-  PAYMENT_INSTRUCTIONS, SUPPORT_LINK,
-} from './config.js';
+import * as config from './config.js';
 import { getSetting, setSetting } from './store.js';
 
+// Discounts for paying several months at once, in percent off (months → %).
+export const DISCOUNT_MONTHS = [3, 6, 12];
+
 const DEFAULTS = {
-  price: MONTHLY_PRICE_CENTS, // per month, in hundredths of `currency`
-  currency: MANUAL_CURRENCY,
-  bank: PAYMENT_BANK,
-  accountName: PAYMENT_ACCOUNT_NAME,
-  accountNumber: PAYMENT_ACCOUNT_NUMBER,
-  instructions: PAYMENT_INSTRUCTIONS,
-  supportLink: SUPPORT_LINK,
+  price: config.MONTHLY_PRICE_CENTS, // per month, in hundredths of `currency`
+  currency: config.MANUAL_CURRENCY,
+  bank: config.PAYMENT_BANK,
+  accountName: config.PAYMENT_ACCOUNT_NAME,
+  accountNumber: config.PAYMENT_ACCOUNT_NUMBER,
+  instructions: config.PAYMENT_INSTRUCTIONS,
+  supportLink: config.SUPPORT_LINK,
+  discounts: config.DISCOUNTS ?? { 3: 10, 6: 15, 12: 25 },
 };
 
 const TEXT_LIMITS = { bank: 40, accountName: 60, accountNumber: 40, instructions: 500, supportLink: 200 };
 
-/** { price, currency, bank, accountName, accountNumber, instructions, supportLink } */
+/** { price, currency, bank, accountName, accountNumber, instructions, supportLink, discounts: { 3, 6, 12 → % } } */
 export async function paymentSettings() {
   let saved = {};
   try {
@@ -50,11 +51,18 @@ export function checkPayment(input) {
     out[key] = value;
   }
   if (!/^https:\/\/\S+$/.test(out.supportLink)) return { error: 'supportLink' };
+  // Whole percents, 0 (none) to 90.
+  out.discounts = {};
+  for (const m of DISCOUNT_MONTHS) {
+    const pct = Number(input.discounts?.[m] ?? 0);
+    if (!Number.isInteger(pct) || pct < 0 || pct > 90) return { error: 'discounts' };
+    out.discounts[m] = pct;
+  }
   return { values: out };
 }
 
 export async function savePaymentSettings(values) {
-  const changed = Object.fromEntries(Object.entries(values).filter(([k, v]) => k in DEFAULTS && v !== DEFAULTS[k]));
+  const changed = Object.fromEntries(Object.entries(values).filter(([k, v]) => k in DEFAULTS && JSON.stringify(v) !== JSON.stringify(DEFAULTS[k])));
   await setSetting('payment', JSON.stringify(changed));
 }
 

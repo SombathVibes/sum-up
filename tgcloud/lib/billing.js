@@ -9,6 +9,7 @@ import { dayOf, formatKhmerDate, now } from './dates.js';
 import { money } from './report.js';
 import { paymentSettings } from './settings.js';
 import { getGroup, getSetting, latestSubscription, recordStarsPayment, setBillingStatus, upsertGroup } from './store.js';
+import { RENEW_MONTHS } from './ui.js';
 
 const esc = (v) => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -31,9 +32,18 @@ export const invoiceLink = (chat) => api.createInvoiceLink({
 });
 
 /** pay: paymentSettings() */
+/** Percent off for paying `months` at once (manual billing; 0 when none). */
+export const discountOf = (months, pay) => (BILLING_MODE === 'manual' ? Number(pay.discounts?.[months]) || 0 : 0);
+
+/** What `months` cost, in hundredths of pay.currency, after the discount. */
+export const priceFor = (months, pay) => Math.round((pay.price * months * (100 - discountOf(months, pay))) / 100);
+
 export const priceLabel = (months, pay) => BILLING_MODE === 'stars'
   ? `${SUBSCRIPTION_STARS * months} ⭐`
-  : `${pay.currency === 'USD' ? '$' : '៛'}${money(pay.price * months)}`;
+  : `${pay.currency === 'USD' ? '$' : '៛'}${money(priceFor(months, pay))}`;
+
+/** '$13.5 (-10%)': the price with its discount, for buttons. */
+export const offerLabel = (months, pay) => `${priceLabel(months, pay)}${discountOf(months, pay) ? ` (-${discountOf(months, pay)}%)` : ''}`;
 
 /**
  * The subscription screen: status and end date, then how to pay — the QR
@@ -68,7 +78,8 @@ export async function subscriptionScreen(chat, group) {
   } else {
     lines.push(
       '',
-      `តម្លៃ: <b>${esc(priceLabel(1, pay))}</b> / ខែ / ក្រុម`,
+      `<b>តម្លៃ / ក្រុម</b>`,
+      ...RENEW_MONTHS.map((m) => `• ${m} ខែ: <b>${esc(priceLabel(m, pay))}</b>${discountOf(m, pay) ? ` (បញ្ចុះ ${discountOf(m, pay)}%)${m === RENEW_MONTHS.at(-1) ? ' 🔥' : ''}` : ''}`),
       '',
       `🏦 ${esc(pay.bank)}`,
       `👤 ${esc(pay.accountName)}`,
