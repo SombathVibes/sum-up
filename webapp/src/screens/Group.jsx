@@ -9,7 +9,7 @@ import { accessBadge, addDays, amount, change, dateOf, monthBounds, timeOf, toda
 import { BillingPanel } from './Billing.jsx';
 import DailyPanel from './Daily.jsx';
 import LotteryCard from './LotteryCard.jsx';
-import Skeleton from '../components/Skeleton.jsx';
+import { GroupReportSkeleton } from '../components/Skeleton.jsx';
 
 const tg = window.Telegram?.WebApp;
 
@@ -78,7 +78,7 @@ export default function Group({ group, startView, onClose, onChanged }) {
           <LotteryCard groupId={group.tgId} range={range} />
 
           {error && <p className="error">{error.message}</p>}
-          {!report && !error && <Skeleton cards={3} chart lines={2} />}
+          {!report && !error && <GroupReportSkeleton />}
           {report && (
             <>
               <section className="card totals">

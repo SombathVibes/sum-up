@@ -9,7 +9,7 @@
 import { useEffect, useState } from 'react';
 import { call } from '../api.js';
 import { riel, shortDay } from '../format.js';
-import { SkeletonCard } from '../components/Skeleton.jsx';
+import { LotterySkeleton } from '../components/Skeleton.jsx';
 
 const profit = (wl) => (wl < 0 ? `📉 ខាត ${riel(-wl)}` : `📈 ចំណេញ ${riel(wl)}`);
 
@@ -56,7 +56,7 @@ export default function LotteryCard({ groupId, range }) {
     </div>
   );
   // Loading: a placeholder in the summary's shape (missing days may be fetched first).
-  if (!data && !error) return <SkeletonCard lines={4} className="lottery" />;
+  if (!data && !error) return <LotterySkeleton />;
   if (!data || !data.report) {
     return (
       <section className="card lottery">

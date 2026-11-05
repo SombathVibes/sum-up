@@ -159,3 +159,19 @@ details summary { cursor: pointer; padding: 4px 0; }
 .sk-chart { height: 44px; border-radius: 8px; }
 @keyframes shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
 @media (prefers-reduced-motion: reduce) { .sk { animation: none; } }
+
+/* Placeholder text (components/Skeleton.jsx Skt): the sample text keeps the
+   real size; it's painted as a shimmering bar instead of shown. */
+.skt, .skeleton .chart figcaption span {
+  color: transparent !important;
+  border-radius: 6px;
+  background: linear-gradient(90deg,
+    color-mix(in srgb, var(--text) 7%, transparent) 25%,
+    color-mix(in srgb, var(--text) 16%, transparent) 37%,
+    color-mix(in srgb, var(--text) 7%, transparent) 63%);
+  background-size: 400% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+strong.skt, div.skt { display: block; width: fit-content; }
+.skeleton .chart svg { border-radius: 8px; background: color-mix(in srgb, var(--muted) 10%, transparent); }
+@media (prefers-reduced-motion: reduce) { .skt, .skeleton .chart figcaption span { animation: none; } }
