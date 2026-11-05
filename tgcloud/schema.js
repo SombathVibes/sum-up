@@ -95,9 +95,10 @@ export const adminGroups = table('admin_groups', {
 // Report source: one per group (off by default; super admins switch it on).
 // At each of `times` (Phnom Penh, 'HH:MM,HH:MM', sorted) the bot calls `url`
 // and saves what it returns as a snapshot (lib/daily.js). In the URL, {date}
-// becomes the day ('YYYY-MM-DD') and {group} the group's Telegram id.
+// becomes the day ('YYYY-MM-DD'), {group} the group's Telegram id and
+// {member} the bound member's user code.
 // groupId is groups.id.
-export const reportSources = table('report_sources', {
+export const groupLotterySettings = table('group_lottery_settings', {
   groupId:     integer('group_id').primaryKey(),
   enabled:     boolean('enabled').notNull().default(false),
   url:         text('url').notNull().default(''),
@@ -105,6 +106,11 @@ export const reportSources = table('report_sources', {
   // headers and saved alongside (snapshot body2), e.g. the same report with
   // isSend=true.
   url2:        text('url2').notNull().default(''),
+  // The lottery member this group follows (its user code; agent_code is the
+  // member's agent): {member} in the URLs, and the 💰 សរុប totals.
+  memberCode:  text('member_code').notNull().default(''),
+  memberName:  text('member_name').notNull().default(''),
+  agentCode:   text('agent_code').notNull().default(''),
   times:       text('times').notNull().default('21:00'),
   postToGroup: boolean('post_to_group').notNull().default(true),
   // Sign-in for APIs that need it. 'login': POST { username, password } as
@@ -135,7 +141,7 @@ export const reportSources = table('report_sources', {
 // run twice. body is the response: for the lottery report only the fields it
 // shows (~4 KB instead of ~70 KB), otherwise the text cut at 300 KB. Kept
 // 7 days; older days are fetched again when picked.
-export const reportSnapshots = table('report_snapshots', {
+export const drawReports = table('draw_reports', {
   id:         integer('id').primaryKey({ autoIncrement: true }),
   groupId:    integer('group_id').notNull(),
   day:        text('day').notNull(), // 'YYYY-MM-DD', Phnom Penh
@@ -145,37 +151,42 @@ export const reportSnapshots = table('report_snapshots', {
   httpStatus: integer('http_status').notNull().default(0),
   body:       text('body').notNull().default(''),
   error:      text('error'),
-  // The second URL's reply (report_sources.url2), stored the same way; empty when there is none.
+  // The second URL's reply (group_lottery_settings.url2), stored the same way; empty when there is none.
   body2:      text('body2').notNull().default(''),
   error2:     text('error2'),
 }, (t) => ({
   // One per group and day; also serves a group's last few days, newest first.
-  day: uniqueIndex('report_snapshots_day_uniq').on(t.groupId, t.day),
+  day: uniqueIndex('draw_reports_day_uniq').on(t.groupId, t.day),
 }));
 
 // Lottery agents under a group's report login, found through the API (the
 // login's user code → user/list-user-levels?filterByLevel=agent) for the
 // agent Excel report (lib/agents.js). groupId is groups.id; userCode is the
 // lottery system's code for the agent.
-export const lotteryAgents = table('lottery_agents', {
+export const agents = table('agents', {
   id:       integer('id').primaryKey({ autoIncrement: true }),
   groupId:  integer('group_id').notNull(),
   userCode: text('user_code').notNull(),
   username: text('username').notNull(),
   nickname: text('nickname').notNull().default(''),
+  // The agent's members, JSON [{ username, userCode, nickname }]: fetched the
+  // first time, on 🔄, and again when a day shows a member not in it.
+  members:  text('members').notNull().default('[]'),
 }, (t) => ({
-  uniq: uniqueIndex('lottery_agents_group_code_uniq').on(t.groupId, t.userCode),
+  uniq: uniqueIndex('agents_group_code_uniq').on(t.groupId, t.userCode),
 }));
 
-// One finished day of an agent's figures, fetched once (a day that is over
-// doesn't change) and reused for every Excel of that month: data is JSON
-// { daily: { 'C5': 52700, … }, m1: [member rows], m3: [សាង member rows] }.
-// Kept about three months.
-export const agentDays = table('agent_days', {
+// One day of an agent's figures, shared by the agent Excel and 💰 សរុប:
+// data is JSON { daily: { 'C5': 52700, … }, m1: [member rows], m3: [សាង
+// member rows] }. fetched_at says how current it is: today's row is fetched
+// again after 5 minutes, and a day fetched before it was over is fetched once
+// more afterwards; then it's final. Kept about three months.
+export const agentDailyTotals = table('agent_daily_totals', {
   id:        integer('id').primaryKey({ autoIncrement: true }),
   agentCode: text('agent_code').notNull(),
   day:       text('day').notNull(), // 'YYYY-MM-DD', Phnom Penh
   data:      text('data').notNull(),
+  fetchedAt: integer('fetched_at').notNull().default(0), // 0: saved before this was kept (a finished day)
 }, (t) => ({
-  uniq: uniqueIndex('agent_days_code_day_uniq').on(t.agentCode, t.day),
+  uniq: uniqueIndex('agent_daily_totals_code_day_uniq').on(t.agentCode, t.day),
 }));

@@ -24,6 +24,7 @@ import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js'
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig, dayPicker, dayReportScreen } from '../lib/daily.js';
 import { agentListScreen, getAgent, monthScreen, sendAgentExcel } from '../lib/agents.js';
+import { totalsPicker, totalsScreen } from '../lib/totals.js';
 import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
@@ -141,11 +142,25 @@ export default async function (query) {
 
     const now = today();
     // 📥 lottery report (lib/daily.js): DREPORT / DRWK_<page> pick a day, DREP_<day> shows it, DREP!_<day> fetches it again.
-    if (key === 'DREPORT' || key.startsWith('DRWK_') || key.startsWith('DREP_') || key.startsWith('DREP!_')) {
-      if (!(await dailyConfig(group.id)).enabled) {
+    // 💰 its totals (lib/totals.js): TOT picks a period, TOT_D_ / TOT_W_ / TOT_M_ show it.
+    if (key === 'DREPORT' || key.startsWith('DRWK_') || key.startsWith('DREP_') || key.startsWith('DREP!_') || key === 'TOT' || key.startsWith('TOT_')) {
+      const cfg = await dailyConfig(group.id, { secret: true });
+      if (!cfg.enabled) {
         return show('📥 មុខងារនេះមិនទាន់បើកសម្រាប់ក្រុមនេះទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
       }
-      if (key === 'DREPORT' || key.startsWith('DRWK_')) return showScreen(await dayPicker(group, Number(key.slice(5)) || 0));
+      const totals = !!cfg.memberCode && cfg.authType === 'login';
+      if (key === 'TOT' || key.startsWith('TOT_')) {
+        if (!totals) return showScreen(await dayPicker(group));
+        if (key === 'TOT') return showScreen(totalsPicker());
+        await show('⏳ កំពុងគណនា…');
+        try {
+          return showScreen(await totalsScreen(group, cfg, key, { refresh }));
+        } catch (e) {
+          console.error('totals failed', e);
+          return show(`⚠️ ${String(e.message ?? e).slice(0, 300)}`, { reply_markup: { inline_keyboard: [[{ text: '🔄 ម្ដងទៀត', callback_data: key }], [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'TOT' }]] } });
+        }
+      }
+      if (key === 'DREPORT' || key.startsWith('DRWK_')) return showScreen(await dayPicker(group, Number(key.slice(5)) || 0, { totals }));
       const fresh = key.startsWith('DREP!_');
       return showScreen(await dayReportScreen(group, key.slice(fresh ? 6 : 5), { refresh: fresh }));
     }

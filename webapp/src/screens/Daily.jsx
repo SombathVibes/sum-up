@@ -12,6 +12,7 @@ const STEPS = [1, 2, 3, 4, 6, 12];
 const FIELD_ERRORS = {
   url: 'សូមដាក់ URL ត្រឹមត្រូវ (https://…)',
   url2: 'URL ទី២ មិនត្រឹមត្រូវ (https://…)',
+  member: 'សមាជិកមិនត្រឹមត្រូវ',
   times: 'សូមជ្រើសម៉ោងយ៉ាងហោចណាស់មួយ',
   loginUrl: 'សូមដាក់ Login URL ត្រឹមត្រូវ (https://…)',
   username: 'សូមដាក់ Username',
@@ -71,6 +72,13 @@ export default function DailyPanel({ group }) {
   const [busy, setBusy] = useState(null);
   const [openKey, setOpenKey] = useState(null); // `${day} ${slot}`
   const [showPw, setShowPw] = useState(false);
+  const [members, setMembers] = useState(null); // [{ agentCode, agent, members: [{ username, userCode, nickname }] }]
+  const [membersError, setMembersError] = useState(null);
+  const loadMembers = () => {
+    setMembersError(null);
+    setMembers('loading');
+    call('dailyMembers', { groupId: group.tgId }).then((r) => setMembers(r.agents), (e) => { setMembers(null); setMembersError(e.message); });
+  };
 
   // The password is write-only: the form starts empty and the server only says hasPassword.
   const fill = (config) => {
@@ -144,6 +152,35 @@ export default function DailyPanel({ group }) {
         <div className="chips">
           <button className="chip" onClick={() => insert('{date}')}>+ {'{date}'} <span className="muted">ថ្ងៃ</span></button>
           <button className="chip" onClick={() => insert('{group}')}>+ {'{group}'} <span className="muted">ID ក្រុម</span></button>
+          {form.memberCode && <button className="chip" onClick={() => insert('{member}')}>+ {'{member}'} <span className="muted">សមាជិក</span></button>}
+        </div>
+
+        <div className="label">
+          <span className="muted small">👤 សមាជិករបស់ក្រុមនេះ · សម្រាប់ {'{member}'} និង 💰 សរុប</span>
+          {Array.isArray(members) ? (
+            <select className="field" value={form.memberCode}
+              onChange={(e) => {
+                const code = e.target.value;
+                const hit = members.flatMap((a) => a.members.map((m) => ({ ...m, agentCode: a.agentCode }))).find((m) => m.userCode === code);
+                set({ memberCode: code, memberName: hit?.username ?? '', agentCode: hit?.agentCode ?? '' });
+              }}>
+              <option value="">— មិនកំណត់ —</option>
+              {members.map((a) => (
+                <optgroup key={a.agentCode} label={`${a.agent}${a.agentNick ? ` · ${a.agentNick}` : ''}`}>
+                  {a.members.map((m) => <option key={m.userCode} value={m.userCode}>{m.username}{m.nickname ? ` · ${m.nickname}` : ''}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          ) : (
+            <div className="row">
+              <span className="grow small">{form.memberCode ? `${form.memberName || form.memberCode}` : <span className="muted">មិនទាន់កំណត់</span>}</span>
+              <button type="button" className="btn small" disabled={members === 'loading' || form.authType !== 'login'} onClick={loadMembers}>
+                {members === 'loading' ? 'កំពុងទាញ…' : form.memberCode ? '🔄 ប្តូរ' : '👤 ជ្រើសរើស'}
+              </button>
+            </div>
+          )}
+          {form.authType !== 'login' && <span className="muted small">ត្រូវបើក 🔐 Login ហើយរក្សាទុកជាមុន។</span>}
+          {membersError && <span className="small error">⚠️ {membersError}</span>}
         </div>
         <label className="label">
           <span className="muted small">URL ទី២ (ស្រេចចិត្ត) · ហៅរាល់ពេលជាមួយ URL ទី១ ហើយរក្សាទុកទាំងពីរ</span>

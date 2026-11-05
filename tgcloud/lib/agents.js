@@ -9,13 +9,13 @@
 //   - Member Tbl_03 (X:AE), សាងលេខ: date, username, 2D, 3D, reward 2D/3D,
 //     win/lose (send/total-report/all);
 //   - MainPage B1 month, D15/E15 agent username/nick, M_report the members.
-// Agents come from the group's report login (report_sources), and their
-// finished days are fetched once and kept in agent_days.
+// Agents come from the group's report login (group_lottery_settings), and their
+// finished days are fetched once and kept in agent_daily_totals.
 
 import { db } from 'sdk';
 import { and, asc, eq, gte, lt, lte } from 'sdk/db';
-import { agentDays, lotteryAgents } from '../schema.js';
-import { addDays, dayKey, today } from './dates.js';
+import { agentDailyTotals, agents } from '../schema.js';
+import { addDays, dayKey, now, parseDayKey, startOf, today } from './dates.js';
 import { dailyConfig, openSession } from './daily.js';
 import { getSetting } from './store.js';
 import { Book, getNum, hasValue, put, putFormulaIfEmpty, serial } from './xlsx.js';
@@ -26,8 +26,12 @@ const ROW_OF = Object.fromEntries(Object.entries(ROWS).map(([row, type]) => [typ
 const DAILY_FIELDS = { C: 'betAmount2DKhr', D: 'betAmount3DKhr', E: 'betAmount4DKhr', G: 'winLoseAmountKhr' };
 const T1 = { first: 4, last: 500, cols: { B: null, C: null, D: 'betAmount2DKhr', E: 'betAmount3DKhr', F: 'betAmount4DKhr', G: 'winLoseAmountKhr' } };
 const T3 = { first: 4, last: 129, cols: { X: null, Y: null, AA: 'betAmount2DKhr', AB: 'betAmount3DKhr', AC: 'rewardAmount2DKhr', AD: 'rewardAmount3DKhr', AE: 'winLoseAmountKhr' } };
-const MEMBER_FIELDS = [...new Set([...Object.values(T1.cols), ...Object.values(T3.cols)].filter(Boolean))];
+// Member fields kept per day: the Excel's (T1/T3) plus the totals the 💰 សរុប view shows.
+const TOTAL_FIELDS = ['commissionKhr', 'rewardAmountKhr', 'winLoseAmountUsd'];
+const MEMBER_FIELDS = [...new Set([...Object.values(T1.cols), ...Object.values(T3.cols), ...TOTAL_FIELDS].filter(Boolean))];
 const KEEP_MONTHS = 3;
+const TODAY_FRESH_S = 300; // today's saved row is reused this long
+const FINAL_AFTER_S = 3600; // a day fetched this long after it ended is final
 const RETRY_MS = [600, 1800]; // waits before retrying a 5xx / 429
 const TEMPLATE_KEY = 'agent_template'; // the template's Telegram file_id
 const TEMPLATE_NAME_KEY = 'agent_template_name';
@@ -104,10 +108,10 @@ async function listUsers(json, userCode, level) {
 }
 
 // ---------------------------------------------------------------- agents of a group
-export const groupAgents = (groupId) => db.select().from(lotteryAgents)
-  .where(eq(lotteryAgents.groupId, groupId)).orderBy(asc(lotteryAgents.username)).all();
+export const groupAgents = (groupId) => db.select().from(agents)
+  .where(eq(agents.groupId, groupId)).orderBy(asc(agents.username)).all();
 
-export const getAgent = (id) => db.select().from(lotteryAgents).where(eq(lotteryAgents.id, id)).get();
+export const getAgent = (id) => db.select().from(agents).where(eq(agents.id, id)).get();
 
 /** Refreshes a group's agents from the API (those under its report login). Returns the list. */
 export async function syncAgents(group) {
@@ -117,14 +121,37 @@ export async function syncAgents(group) {
   const found = await listUsers(json, code, 'agent');
   const keep = new Set(found.map((a) => a.userCode));
   for (const a of await groupAgents(group.id)) {
-    if (!keep.has(a.userCode)) await db.delete(lotteryAgents).where(eq(lotteryAgents.id, a.id)).run();
+    if (!keep.has(a.userCode)) await db.delete(agents).where(eq(agents.id, a.id)).run();
   }
   for (const a of found) {
-    await db.insert(lotteryAgents).values({ groupId: group.id, ...a })
-      .onConflictDoUpdate({ target: [lotteryAgents.groupId, lotteryAgents.userCode], set: { username: a.username, nickname: a.nickname } })
+    const members = JSON.stringify(await listUsers(json, a.userCode, 'member'));
+    await db.insert(agents).values({ groupId: group.id, ...a, members })
+      .onConflictDoUpdate({ target: [agents.groupId, agents.userCode], set: { username: a.username, nickname: a.nickname, members } })
       .run();
   }
   return groupAgents(group.id);
+}
+
+/** An agent's saved members; fetched (and saved) when there are none yet or `refresh`. */
+async function membersOf(json, agent, { refresh = false } = {}) {
+  let list = [];
+  try {
+    list = refresh ? [] : JSON.parse(agent.members || '[]');
+  } catch {
+    // broken JSON: fetch it again
+  }
+  if (!list.length) {
+    list = await listUsers(json, agent.userCode, 'member');
+    agent.members = JSON.stringify(list);
+    await db.update(agents).set({ members: agent.members }).where(eq(agents.id, agent.id)).run();
+  }
+  return list;
+}
+
+/** Is a saved agent_daily_totals row still good? Today's: for TODAY_FRESH_S; past days: once fetched after they ended. */
+function isCurrent(row, day, todayKey) {
+  if (day === todayKey) return now() - row.fetchedAt < TODAY_FRESH_S;
+  return row.fetchedAt === 0 || row.fetchedAt >= startOf(addDays(parseDayKey(day), 1)) + FINAL_AFTER_S;
 }
 
 // ---------------------------------------------------------------- days
@@ -136,8 +163,8 @@ export async function syncAgents(group) {
  *   - m1 / m3: report/ and send/total-report/all for the member level return
  *     all members at once; kept: this agent's members with bets.
  */
-async function fetchDay(json, agent, members, day) {
-  const mine = new Set(members.map((m) => m.userCode));
+async function fetchDay(json, agent, day) {
+  let mine = new Set((await membersOf(json, agent)).map((m) => m.userCode));
   const totals = { filterByLevel: 'member', filterByReportType: 'TOTAL', startDate: day, endDate: day, filterByUsername: agent.username };
   const [report, m1, m3] = await Promise.all([
     json('report/daily-report/all', { filterByReportType: 'ONE', filterByDate: day, filterByLevel: 'agent', filterByUserCode: agent.userCode }),
@@ -151,10 +178,16 @@ async function fetchDay(json, agent, members, day) {
     if (!s || !row) continue;
     for (const [col, field] of Object.entries(DAILY_FIELDS)) if (num(s[field])) daily[`${col}${row}`] = num(s[field]);
   }
+  // A member with bets who isn't in the saved list (a new one): refresh the list, then filter exactly.
+  const looksOurs = (r) => r.username?.startsWith(agent.username) && r.userCode !== agent.userCode;
+  const all = [...(m1?.data?.settlements ?? []), ...(m3?.data?.settlements ?? [])];
+  if (all.some((r) => !mine.has(r.userCode) && looksOurs(r) && totalBet(r) > 0)) {
+    mine = new Set((await membersOf(json, agent, { refresh: true })).map((m) => m.userCode));
+  }
   const memberRows = (reply) => (reply?.data?.settlements ?? [])
     .filter((r) => mine.has(r.userCode) && totalBet(r) > 0)
     .sort((a, b) => a.username.localeCompare(b.username))
-    .map((r) => Object.fromEntries([['username', r.username], ...MEMBER_FIELDS.map((f) => [f, num(r[f])])]));
+    .map((r) => Object.fromEntries([['username', r.username], ['userCode', r.userCode], ...MEMBER_FIELDS.map((f) => [f, num(r[f])])]));
   return { daily, m1: memberRows(m1), m3: memberRows(m3) };
 }
 
@@ -165,41 +198,97 @@ const monthDays = (month) => {
 };
 
 /**
- * Makes sure an agent's finished days of `month` ('YYYY-MM') are saved,
- * fetching missing ones until `budgetMs` runs out. Returns
- * { days, missing, total, members, error } (missing > 0: run again; error:
- * why the last day failed).
+ * Makes sure an agent's `days` ('YYYY-MM-DD', up to today) are saved and
+ * current (isCurrent; `refresh`: today again regardless), fetching the rest
+ * until `budgetMs` runs out. Returns { days: Map(day → data), missing,
+ * total, members, error } (missing > 0: run again; error: why the last day
+ * failed).
  */
-export async function collectMonth(group, agent, month, budgetMs = 12000) {
+export async function collectDays(group, agent, wanted, { budgetMs = 12000, refresh = false } = {}) {
   const started = Date.now();
-  const lastDay = dayKey(addDays(today(), -1)); // only days that are over
-  const days = monthDays(month).filter((d) => d <= lastDay);
-  const saved = new Map((await db.select().from(agentDays)
-    .where(and(eq(agentDays.agentCode, agent.userCode), gte(agentDays.day, days[0] ?? month), lte(agentDays.day, days.at(-1) ?? month)))
-    .all()).map((r) => [r.day, JSON.parse(r.data)]));
+  const todayKey = dayKey(today());
+  const days = [...new Set(wanted)].filter((d) => d <= todayKey).sort();
+  const rows = days.length ? await db.select().from(agentDailyTotals)
+    .where(and(eq(agentDailyTotals.agentCode, agent.userCode), gte(agentDailyTotals.day, days[0]), lte(agentDailyTotals.day, days.at(-1))))
+    .all() : [];
+  const saved = new Map();
+  const stale = new Set(days);
+  for (const r of rows) {
+    if (!days.includes(r.day)) continue;
+    saved.set(r.day, JSON.parse(r.data)); // a stale row still counts if it can't be fetched now
+    if (isCurrent(r, r.day, todayKey) && !(refresh && r.day === todayKey)) stale.delete(r.day);
+  }
   const { json } = await sessionFor(group);
-  const members = await listUsers(json, agent.userCode, 'member');
-  let missing = days.filter((d) => !saved.has(d));
   let error = null;
-  for (const day of [...missing]) {
+  for (const day of [...stale]) {
     if (Date.now() - started > budgetMs) break;
     let data;
     try {
-      data = await fetchDay(json, agent, members, day);
+      data = await fetchDay(json, agent, day);
     } catch (e) {
       error = `${day}: ${e.message}`; // keep what was collected; the user can run it again
       break;
     }
-    await db.insert(agentDays).values({ agentCode: agent.userCode, day, data: JSON.stringify(data) })
-      .onConflictDoUpdate({ target: [agentDays.agentCode, agentDays.day], set: { data: JSON.stringify(data) } }).run();
+    const row = { data: JSON.stringify(data), fetchedAt: now() };
+    await db.insert(agentDailyTotals).values({ agentCode: agent.userCode, day, ...row })
+      .onConflictDoUpdate({ target: [agentDailyTotals.agentCode, agentDailyTotals.day], set: row }).run();
     saved.set(day, data);
-    missing = missing.filter((d) => d !== day);
+    stale.delete(day);
   }
   // Days of months older than KEEP_MONTHS go.
   const { y, m } = today();
   const cutoff = new Date(Date.UTC(y, m - 1 - KEEP_MONTHS, 1)).toISOString().slice(0, 10);
-  await db.delete(agentDays).where(lt(agentDays.day, cutoff)).run();
-  return { days: saved, missing: missing.length, total: days.length, members, error };
+  await db.delete(agentDailyTotals).where(lt(agentDailyTotals.day, cutoff)).run();
+  const missing = days.filter((d) => !saved.has(d)).length;
+  return { days: saved, missing, total: days.length, members: await membersOf(json, agent), error };
+}
+
+/** collectDays for a month ('YYYY-MM') up to yesterday: the Excel (a day goes in once it's over). */
+export const collectMonth = (group, agent, month) => {
+  const yesterday = dayKey(addDays(today(), -1));
+  return collectDays(group, agent, monthDays(month).filter((d) => d <= yesterday));
+};
+
+// ---------------------------------------------------------------- 💰 member totals
+/** The agents under the group's login with their members, for the Mini App's member picker. */
+export async function memberOptions(group) {
+  const list = await syncAgents(group);
+  const { json } = await sessionFor(group);
+  const out = [];
+  for (const a of list) {
+    out.push({ agentCode: a.userCode, agent: a.username, agentNick: a.nickname, members: await membersOf(json, a) });
+  }
+  return out;
+}
+
+const ZERO = () => Object.fromEntries(MEMBER_FIELDS.map((f) => [f, 0]));
+const addInto = (sum, row) => { for (const f of MEMBER_FIELDS) sum[f] += num(row?.[f]); return sum; };
+
+/**
+ * The bound member's totals over `days` (cfg: the group's source with
+ * memberCode/agentCode), from agent_daily_totals (shared with the Excel; missing or
+ * stale days fetched, `refresh`: today again).
+ * Returns { report, send, perDay: [{ day, report, send }], missing, error }.
+ */
+export async function memberTotals(group, cfg, days, { refresh = false } = {}) {
+  let agent = (await groupAgents(group.id)).find((a) => a.userCode === cfg.agentCode);
+  if (!agent) agent = (await syncAgents(group)).find((a) => a.userCode === cfg.agentCode);
+  if (!agent) throw new Error('The bound member’s agent isn’t under this login any more.');
+  const r = await collectDays(group, agent, days, { refresh });
+  // By user code (rows saved before codes were kept: by username).
+  const pick = (rows) => rows.find((x) => (x.userCode ? x.userCode === cfg.memberCode : x.username === cfg.memberName)) ?? null;
+  const report = ZERO();
+  const send = ZERO();
+  const perDay = [];
+  for (const day of [...r.days.keys()].sort()) {
+    const { m1, m3 } = r.days.get(day);
+    const one = { day, report: pick(m1), send: pick(m3) };
+    addInto(report, one.report);
+    addInto(send, one.send);
+    perDay.push(one);
+  }
+  const counted = new Set(r.days.keys());
+  return { report, send, perDay, missing: days.filter((d) => !counted.has(d)).length, error: r.error };
 }
 
 /**
@@ -211,17 +300,9 @@ export async function collectYesterday(groups) {
   const yesterday = dayKey(addDays(today(), -1));
   for (const group of groups) {
     for (const agent of await groupAgents(group.id)) {
-      const have = await db.select({ id: agentDays.id }).from(agentDays)
-        .where(and(eq(agentDays.agentCode, agent.userCode), eq(agentDays.day, yesterday))).get();
-      if (have) continue;
-      try {
-        const { json } = await sessionFor(group);
-        const data = await fetchDay(json, agent, await listUsers(json, agent.userCode, 'member'), yesterday);
-        await db.insert(agentDays).values({ agentCode: agent.userCode, day: yesterday, data: JSON.stringify(data) })
-          .onConflictDoNothing().run();
-      } catch (e) {
-        console.error(`agent day ${agent.username} ${yesterday} failed`, e.message);
-      }
+      // collectDays skips it when it's already saved and final.
+      const r = await collectDays(group, agent, [yesterday]).catch((e) => ({ error: e.message }));
+      if (r.error) console.error(`agent day ${agent.username} ${yesterday} failed`, r.error);
     }
   }
 }
@@ -315,20 +396,20 @@ const monthLabel = (month) => `${KH_MONTHS[Number(month.slice(5)) - 1]} ${month.
 
 /** XL: the group's agents (found through the API the first time); XLSYNC refreshes them. */
 export async function agentListScreen(group, { refresh = false } = {}) {
-  let agents = await groupAgents(group.id);
+  let list = await groupAgents(group.id);
   let note = '';
-  if (refresh || !agents.length) {
+  if (refresh || !list.length) {
     try {
-      agents = await syncAgents(group);
+      list = await syncAgents(group);
       note = refresh ? '\n✅ បានទាញបញ្ជីថ្មី' : '';
     } catch (e) {
       note = `\n⚠️ ${e.message}`;
     }
   }
-  const rows = agents.map((a) => [btn(`👤 ${a.username}${a.nickname ? ` · ${a.nickname}` : ''}`, `XLA_${a.id}`)]);
+  const rows = list.map((a) => [btn(`👤 ${a.username}${a.nickname ? ` · ${a.nickname}` : ''}`, `XLA_${a.id}`)]);
   rows.push([btn('🔄 ទាញបញ្ជីថ្មី', 'XLSYNC'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
   return {
-    text: `<b>📊 Excel ភ្នាក់ងារ</b>\n${agents.length ? 'ជ្រើសរើសភ្នាក់ងារ:' : 'មិនមានភ្នាក់ងារ។'}${note}`,
+    text: `<b>📊 Excel ភ្នាក់ងារ</b>\n${list.length ? 'ជ្រើសរើសភ្នាក់ងារ:' : 'មិនមានភ្នាក់ងារ។'}${note}`,
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: rows },
   };

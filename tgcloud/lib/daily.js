@@ -11,7 +11,7 @@
 
 import { api, db, fetch } from 'sdk';
 import { and, desc, eq, gte, lt, lte } from 'sdk/db';
-import { reportSources, reportSnapshots } from '../schema.js';
+import { groupLotterySettings, drawReports } from '../schema.js';
 import { SYNC_HELPER_SECRET, SYNC_HELPER_URL } from './config.js';
 import { addDays, dayKey, formatTime, now, pad2, parseDayKey, today } from './dates.js';
 import { listGroups } from './store.js';
@@ -45,6 +45,9 @@ function toConfig(row, secret) {
     enabled: !!r.enabled,
     url: r.url,
     url2: r.url2 ?? '',
+    memberCode: r.memberCode ?? '',
+    memberName: r.memberName ?? '',
+    agentCode: r.agentCode ?? '',
     times: parseTimes(r.times),
     postToGroup: !!r.postToGroup,
     authType: r.authType === 'login' ? 'login' : 'none',
@@ -63,7 +66,7 @@ function toConfig(row, secret) {
 
 /** A group's config, or the defaults (off). groupId is groups.id. `secret`: include the password (only for running it). */
 export async function dailyConfig(groupId, { secret = false } = {}) {
-  const row = await db.select().from(reportSources).where(eq(reportSources.groupId, groupId)).get();
+  const row = await db.select().from(groupLotterySettings).where(eq(groupLotterySettings.groupId, groupId)).get();
   return toConfig(row, secret);
 }
 
@@ -78,7 +81,12 @@ export function checkDaily(input) {
   if (url2 && (!/^https?:\/\/\S+$/.test(url2) || url2.length > 1000)) return { error: 'url2' };
   if (!list.length || list.length > MAX_TIMES || !list.every((t) => TIME.test(t))) return { error: 'times' };
   const times = [...new Set(list)].sort();
-  const values = { enabled, url, url2, times, postToGroup: input.postToGroup !== false, authType: 'none', loginUrl: '', username: '', tokenField: '' };
+  // The bound member: user codes are digits; the name is only for showing.
+  const memberCode = String(input.memberCode ?? '').trim();
+  const agentCode = String(input.agentCode ?? '').trim();
+  if (!/^\d{0,20}$/.test(memberCode) || !/^\d{0,20}$/.test(agentCode) || (memberCode && !agentCode)) return { error: 'member' };
+  const memberName = memberCode ? String(input.memberName ?? '').trim().slice(0, 80) : '';
+  const values = { enabled, url, url2, memberCode, memberName, agentCode: memberCode ? agentCode : '', times, postToGroup: input.postToGroup !== false, authType: 'none', loginUrl: '', username: '', tokenField: '' };
   if (input.authType === 'login') {
     const loginUrl = String(input.loginUrl ?? '').trim();
     const username = String(input.username ?? '').trim();
@@ -117,14 +125,14 @@ export async function saveDailyConfig(groupId, values) {
   const { useBasic: _u, ...rest } = values;
   // New settings may mean a new login: drop the saved token.
   const row = { ...rest, times: values.times.join(','), token: '' };
-  await db.insert(reportSources)
+  await db.insert(groupLotterySettings)
     .values({ groupId, ...row })
-    .onConflictDoUpdate({ target: reportSources.groupId, set: row })
+    .onConflictDoUpdate({ target: groupLotterySettings.groupId, set: row })
     .run();
   await pushSchedule();
 }
 
-const enabledConfigs = () => db.select().from(reportSources).where(eq(reportSources.enabled, true)).all();
+const enabledConfigs = () => db.select().from(groupLotterySettings).where(eq(groupLotterySettings.enabled, true)).all();
 
 /**
  * Sends the helper the minutes to wake the bot at. Best effort: if the helper
@@ -147,25 +155,26 @@ export async function pushSchedule() {
   }
 }
 
-export const reportHistory = (groupId, limit = 30) => db.select().from(reportSnapshots)
-  .where(eq(reportSnapshots.groupId, groupId)).orderBy(desc(reportSnapshots.day)).limit(limit).all();
+export const reportHistory = (groupId, limit = 30) => db.select().from(drawReports)
+  .where(eq(drawReports.groupId, groupId)).orderBy(desc(drawReports.day)).limit(limit).all();
 
 /** One day's saved report ('YYYY-MM-DD'), or undefined. */
-export const reportForDay = (groupId, day) => db.select().from(reportSnapshots)
-  .where(and(eq(reportSnapshots.groupId, groupId), eq(reportSnapshots.day, day))).get();
+export const reportForDay = (groupId, day) => db.select().from(drawReports)
+  .where(and(eq(drawReports.groupId, groupId), eq(drawReports.day, day))).get();
 
 /** Days ('YYYY-MM-DD') in [from, to] that have a successful saved report. */
 export async function reportDays(groupId, from, to) {
-  const rows = await db.select({ day: reportSnapshots.day }).from(reportSnapshots)
-    .where(and(eq(reportSnapshots.groupId, groupId), gte(reportSnapshots.day, from), lte(reportSnapshots.day, to), eq(reportSnapshots.ok, true)))
+  const rows = await db.select({ day: drawReports.day }).from(drawReports)
+    .where(and(eq(drawReports.groupId, groupId), gte(drawReports.day, from), lte(drawReports.day, to), eq(drawReports.ok, true)))
     .all();
   return new Set(rows.map((r) => r.day));
 }
 
 /** The URL with {date} and {group} filled in. */
-export const buildUrl = (url, day, group) => url
+export const buildUrl = (url, day, group, cfg = {}) => url
   .replaceAll('{date}', encodeURIComponent(day))
-  .replaceAll('{group}', encodeURIComponent(String(group.tgId)));
+  .replaceAll('{group}', encodeURIComponent(String(group.tgId)))
+  .replaceAll('{member}', encodeURIComponent(cfg.memberCode ?? ''));
 
 /** A dotted path ('data.token') out of a parsed reply. */
 const pick = (obj, path) => path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj);
@@ -239,7 +248,7 @@ export function openSession(group, cfg, signal) {
   let pending = null;
   const fresh = () => (pending ??= (async () => {
     token = await signIn(cfg, signal);
-    await db.update(reportSources).set({ token }).where(eq(reportSources.groupId, group.id)).run();
+    await db.update(groupLotterySettings).set({ token }).where(eq(groupLotterySettings.groupId, group.id)).run();
   })().finally(() => { pending = null; }));
   const request = async (url) => {
     if (cfg.authType === 'login' && !token) await fresh();
@@ -275,7 +284,7 @@ export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today(
 
   const request = openSession(group, cfg, controller.signal);
   const get = async (rawUrl) => {
-    const res = await request(buildUrl(rawUrl, day, group));
+    const res = await request(buildUrl(rawUrl, day, group, cfg));
     const text = await res.text();
     const body = (res.ok && compactLottery(text)) || text.slice(0, MAX_BODY);
     return { res, body, error: res.ok ? null : `HTTP ${res.status}${replyReason(body)}` };
@@ -301,11 +310,11 @@ export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today(
   // (only noting the time it ran for, so that time isn't retried every minute).
   const saved = !row.ok && (await reportForDay(group.id, day));
   if (saved?.ok) {
-    await db.update(reportSnapshots).set({ slot }).where(and(eq(reportSnapshots.groupId, group.id), eq(reportSnapshots.day, day))).run();
+    await db.update(drawReports).set({ slot }).where(and(eq(drawReports.groupId, group.id), eq(drawReports.day, day))).run();
   } else {
     const { groupId: _g, day: _d, ...set } = row;
-    await db.insert(reportSnapshots).values(row)
-      .onConflictDoUpdate({ target: [reportSnapshots.groupId, reportSnapshots.day], set })
+    await db.insert(drawReports).values(row)
+      .onConflictDoUpdate({ target: [drawReports.groupId, drawReports.day], set })
       .run();
   }
   if (row.ok && cfg.postToGroup) {
@@ -316,8 +325,8 @@ export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today(
 }
 
 /** Snapshots are kept KEEP_DAYS days. */
-export const pruneSnapshots = () => db.delete(reportSnapshots)
-  .where(lt(reportSnapshots.day, dayKey(addDays(today(), -KEEP_DAYS)))).run();
+export const pruneSnapshots = () => db.delete(drawReports)
+  .where(lt(drawReports.day, dayKey(addDays(today(), -KEEP_DAYS)))).run();
 
 /**
  * /dailyrun: for every enabled group, its latest time that has passed today,
@@ -553,7 +562,7 @@ const dm = (key) => `${key.slice(8, 10)}/${key.slice(5, 7)}`;
  * `page` weeks back), • on days with a saved report. Buttons: DREP_<day>,
  * DRWK_<page>, BACK.
  */
-export async function dayPicker(group, page = 0) {
+export async function dayPicker(group, page = 0, { totals = false } = {}) {
   const now = today();
   const first = addDays(now, -7 * page);
   const days = Array.from({ length: 7 }, (_, i) => dayKey(addDays(first, -i)));
@@ -567,6 +576,8 @@ export async function dayPicker(group, page = 0) {
   const buttons = days.map((key, i) => btn(label(key, i), `DREP_${key}`));
   const rows = [buttons.slice(0, 2), buttons.slice(2, 5), buttons.slice(5, 7)];
   rows.push([btn('◀ សប្ដាហ៍មុន', `DRWK_${page + 1}`), ...(page > 0 ? [btn('សប្ដាហ៍ក្រោយ ▶', `DRWK_${page - 1}`)] : [])]);
+  // The bound member's totals (lib/totals.js), when the group has one.
+  if (totals) rows.push([btn('💰 សរុប (ថ្ងៃ · សប្ដាហ៍ · ខែ)', 'TOT')]);
   rows.push([btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
   return {
     text: `<b>📥 ${REPORT_NAME}</b>\nជ្រើសរើសថ្ងៃ (• មានរបាយការណ៍រួច):`,
