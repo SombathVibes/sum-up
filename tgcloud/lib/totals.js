@@ -89,8 +89,8 @@ function previousDays(p) {
   return q ? q.days.slice(0, p.days.length) : [];
 }
 
-/** TOT_<who>: pick a period for a subject. Plus changing whose, and back to the by-draw report. */
-export function totalsPicker(who) {
+/** TOT_<who>: pick a period for a subject. Plus changing whose (`canSwitch`), and back to the by-draw report. */
+export function totalsPicker(who, { canSwitch = false } = {}) {
   const w = `_${subjectToken(who.key)}`;
   const t = dayKey(today());
   const y = dayKey(addDays(today(), -1));
@@ -104,7 +104,7 @@ export function totalsPicker(who) {
         [btn('ថ្ងៃនេះ', `TOT_D_${t}${w}`), btn('ម្សិលមិញ', `TOT_D_${y}${w}`)],
         [btn('សប្ដាហ៍នេះ', `TOT_W_${thisMonday}${w}`), btn('សប្ដាហ៍មុន', `TOT_W_${dayKey(addDays(parseDayKey(thisMonday), -7))}${w}`)],
         [btn('ខែនេះ', `TOT_M_${month}${w}`), btn('ខែមុន', `TOT_M_${monthKey(addMonths(parseMonthKey(month), -1))}${w}`)],
-        [btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'TOTWHO')],
+        ...(canSwitch ? [[btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'TOTWHO')]] : []),
         [btn(`📋 ${REPORT_NAME} (ប្រចាំវេន)`, `DRWK_0${w}`)],
         [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
       ],
@@ -112,11 +112,11 @@ export function totalsPicker(who) {
   };
 }
 
-/** One period's totals for a subject (`who`, daily.js subjectOf; `refresh`: today fetched again). */
-export async function totalsScreen(group, who, data, { refresh = false } = {}) {
+/** One period's totals for a subject (`who`, daily.js subjectOf) with a login (secret); `refresh`: today fetched again. */
+export async function totalsScreen(group, login, who, data, { refresh = false, canSwitch = false } = {}) {
   const p = periodOf(data);
-  if (!p) return totalsPicker(who);
-  const [cur, prev] = await Promise.all([subjectTotals(group, who, p.days, { refresh }), subjectTotals(group, who, previousDays(p)).catch(() => null)]);
+  if (!p) return totalsPicker(who, { canSwitch });
+  const [cur, prev] = await Promise.all([subjectTotals(login, who, p.days, { refresh }), subjectTotals(login, who, previousDays(p)).catch(() => null)]);
   const r = cur.report;
   const s = cur.send;
   const lines = [
@@ -158,6 +158,6 @@ export async function totalsScreen(group, who, data, { refresh = false } = {}) {
   return {
     text: lines.join('\n'),
     parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', `TOT_${subjectToken(who.key)}`), btn('🔀 ប្តូរអ្នក', 'TOTWHO')], [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]] },
+    reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', `TOT_${subjectToken(who.key)}`), ...(canSwitch ? [btn('🔀 ប្តូរអ្នក', 'TOTWHO')] : [])], [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]] },
   };
 }

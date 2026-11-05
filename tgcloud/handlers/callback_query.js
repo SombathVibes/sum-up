@@ -22,7 +22,8 @@ import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
-import { dailyConfig, dayPicker, dayReportScreen, savedAgents, subjectOf, subjectPicker, tokenSubject } from '../lib/daily.js';
+import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject } from '../lib/daily.js';
+import { getLogin } from '../lib/logins.js';
 import { agentListScreen, getAgent, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
 import { totalsPicker, totalsScreen } from '../lib/totals.js';
 import { paymentSettings } from '../lib/settings.js';
@@ -141,42 +142,46 @@ export default async function (query) {
     }
 
     const now = today();
-    // 📥 lottery report (lib/daily.js) and 💰 its totals (lib/totals.js), for a
-    // subject: everyone under the login, an agent or a member, as a trailing
-    // _<who> (user code, or 'a' for everyone; none: the group's default).
+    // 📥 lottery report (lib/daily.js) and 💰 its totals (lib/totals.js). In a
+    // group: only the group's member. Super admins in the private panel may
+    // switch (🔀) to everyone under the login, an agent or another member, as
+    // a trailing _<who> (user code, or 'a' for everyone).
     //   DREPORT / DRWK_<page>[_<who>] pick a day, DREP_<day>[_<who>] shows it,
     //   DREP!_… fetches it again; TOT[_<who>] picks a period, TOT_D_ / TOT_W_ /
     //   TOT_M_…[_<who>] show it; DRWHO[_<day>] / TOTWHO pick whose, WHOSYNC
     //   refreshes the list of agents and members.
     if (/^(DREPORT|DRWK_|DREP!?_|DRWHO|TOT$|TOT_|TOTWHO|WHOSYNC)/.test(key)) {
-      const cfg = await dailyConfig(group.id, { secret: true });
-      if (!cfg.enabled) {
+      const cfg = await dailyConfig(group.id);
+      const login = cfg.enabled && cfg.memberCode ? await getLogin(cfg.loginId, { secret: true }) : null;
+      if (!login) {
         return show('📥 មុខងារនេះមិនទាន់បើកសម្រាប់ក្រុមនេះទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
       }
-      const totals = !!cfg.baseUrl;
-      const whoOf = (tok) => subjectOf(group.id, tokenSubject(tok) ?? cfg.memberCode);
-      if (key === 'DRWHO' || key.startsWith('DRWHO_') || key === 'TOTWHO' || key === 'WHOSYNC') {
+      const canSwitch = !!scopedId && superAdmin;
+      const mine = await groupSubject(cfg);
+      // Anyone else only for super admins in the private panel.
+      const whoOf = async (tok) => (canSwitch && tokenSubject(tok) !== undefined ? subjectOf(cfg.loginId, tokenSubject(tok)) : mine);
+      if (/^(DRWHO|TOTWHO|WHOSYNC)/.test(key)) {
+        if (!canSwitch) return showScreen(await dayPicker(cfg, mine));
         let note = '';
-        if (key === 'WHOSYNC' || !(await savedAgents(group.id)).length) {
+        if (key === 'WHOSYNC' || !(await savedAgents(cfg.loginId)).length) {
           try {
-            await syncAgents(group);
+            await syncAgents(login);
             if (key === 'WHOSYNC') note = '\n✅ បានទាញបញ្ជីថ្មី';
           } catch (e) {
             note = `\n⚠️ ${String(e.message ?? e).slice(0, 200)}`;
           }
         }
-        if (key === 'TOTWHO') return showScreen(await subjectPicker(group, { title: '💰 សរុប', target: (t) => `TOT_${t}`, back: 'TOT', note }));
+        if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 សរុប', target: (t) => `TOT_${t}`, back: 'TOT', note }));
         const day = /^DRWHO_(\d{4}-\d\d-\d\d)$/.exec(key)?.[1];
-        return showScreen(await subjectPicker(group, { target: (t) => (day ? `DREP_${day}_${t}` : `DRWK_0_${t}`), back: day ? `DREP_${day}` : 'DREPORT', note }));
+        return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRWK_0_${t}`), back: day ? `DREP_${day}` : 'DREPORT', note }));
       }
       if (key === 'TOT' || key.startsWith('TOT_')) {
-        if (!totals) return showScreen(await dayPicker(group));
         const pick = /^TOT(?:_(a|\d{1,20}))?$/.exec(key);
-        if (pick) return showScreen(totalsPicker(await whoOf(pick[1])));
+        if (pick) return showScreen(totalsPicker(await whoOf(pick[1]), { canSwitch }));
         const who = await whoOf(/_(a|\d{1,20})$/.exec(key)?.[1]);
         await show('⏳ កំពុងគណនា…');
         try {
-          return showScreen(await totalsScreen(group, who, key, { refresh }));
+          return showScreen(await totalsScreen(group, login, who, key, { refresh, canSwitch }));
         } catch (e) {
           console.error('totals failed', e);
           return show(`⚠️ ${String(e.message ?? e).slice(0, 300)}`, { reply_markup: { inline_keyboard: [[{ text: '🔄 ម្ដងទៀត', callback_data: key }], [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'TOT' }]] } });
@@ -184,25 +189,28 @@ export default async function (query) {
       }
       if (key === 'DREPORT' || key.startsWith('DRWK_')) {
         const [, page, tok] = /^DRWK_(\d+)(?:_(a|\d{1,20}))?$/.exec(key) ?? [];
-        return showScreen(await dayPicker(group, Number(page) || 0, { totals, who: await whoOf(tok) }));
+        return showScreen(await dayPicker(cfg, await whoOf(tok), Number(page) || 0, { canSwitch }));
       }
       const [, bang, day, tok] = /^DREP(!?)_(\d{4}-\d\d-\d\d)(?:_(a|\d{1,20}))?$/.exec(key) ?? [];
-      if (!day) return showScreen(await dayPicker(group, 0, { totals }));
-      return showScreen(await dayReportScreen(group, day, { refresh: !!bang, key: (await whoOf(tok)).key }));
+      if (!day) return showScreen(await dayPicker(cfg, mine, 0, { canSwitch }));
+      return showScreen(await dayReportScreen(group, cfg, await whoOf(tok), day, { refresh: !!bang, canSwitch }));
     }
 
-    // 📊 Agent Excel (private admin panel only, checked above): XL lists the group's
-    // agents, XLSYNC refreshes them, XLA_<id> picks a month, XLM_<id>_<YYYY-MM> builds
-    // it and sends it to that private chat.
+    // 📊 Agent Excel (private admin panel only, checked above): XL lists the agents
+    // under the group's login, XLSYNC refreshes them, XLA_<id> picks a month,
+    // XLM_<id>_<YYYY-MM> builds it and sends it to that private chat.
     if (key === 'XL' || key === 'XLSYNC' || key.startsWith('XLA_') || key.startsWith('XLM_')) {
-      if (key === 'XL' || key === 'XLSYNC') return showScreen(await agentListScreen(group, { refresh: key === 'XLSYNC' }));
+      const cfg = await dailyConfig(group.id);
+      const login = cfg.loginId ? await getLogin(cfg.loginId, { secret: true }) : null;
+      if (!login) return show('⚠️ ក្រុមនេះមិនទាន់មាន Login ឆ្នោតទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
+      if (key === 'XL' || key === 'XLSYNC') return showScreen(await agentListScreen(login, { refresh: key === 'XLSYNC' }));
       const [, id, month] = /^XL[AM]_(\d+)(?:_(\d{4}-\d\d))?$/.exec(key) ?? [];
       const agent = id && (await getAgent(Number(id)));
-      if (!agent || agent.groupId !== group.id) return showScreen(await agentListScreen(group));
+      if (!agent || agent.loginId !== login.id) return showScreen(await agentListScreen(login));
       if (key.startsWith('XLA_') || !month) return showScreen(monthScreen(agent));
       await show(`⏳ កំពុងរៀបចំ Excel ${agent.username} · ${month}…`);
       try {
-        return showScreen(await sendAgentExcel(group, agent, month, query.from.id, api, InputFile, isPrivate));
+        return showScreen(await sendAgentExcel(login, agent, month, query.from.id, api, InputFile, isPrivate));
       } catch (e) {
         console.error('agent excel failed', e);
         // The bot can only message people who have started it.
@@ -216,8 +224,8 @@ export default async function (query) {
       case 'BACK': {
         const status = await accessStatus(group);
         const cfg = await dailyConfig(group.id);
-        // 📊 Excel ភ្នាក់ងារ only in the private panel, for groups whose report signs in.
-        const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled, !!scopedId && !!cfg.baseUrl);
+        // 📊 Excel ភ្នាក់ងារ only in the private panel, for groups that follow a login.
+        const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled && !!cfg.memberCode, !!scopedId && !!cfg.loginId);
         // In the private panel: the group's name on top, and a way back to all groups.
         if (scopedId) {
           return show(`${await groupTitle(group)}\n${menuText(status)}`, {

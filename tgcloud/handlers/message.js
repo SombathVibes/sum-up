@@ -8,7 +8,9 @@ import { addPrompt, adminPanel, teamMemberScreen } from '../lib/admin.js';
 import { TEMPLATE_KEY, TEMPLATE_NAME_KEY, checkTemplate, collectYesterday } from '../lib/agents.js';
 import { accessStatus, recordPayment, subscriptionScreen } from '../lib/billing.js';
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
-import { dailyConfig, pushSchedule, runDue } from '../lib/daily.js';
+import { dailyConfig } from '../lib/daily.js';
+import { listLogins, pushSchedule } from '../lib/logins.js';
+import { runDue } from '../lib/schedule.js';
 import { parseAmount } from '../lib/parse.js';
 import { getGroup, hasActiveSubscription, listGroups, saveMessages, setSetting } from '../lib/store.js';
 import { addAdmin, canManage, isSuper, roleIn } from '../lib/roles.js';
@@ -58,20 +60,15 @@ export default async function (message) {
         await api.deleteMessage({ chat_id: chatId, message_id: message.message_id }).catch(() => {});
         const ran = await runDue();
         await pushSchedule();
-        // Agent Excel: save yesterday for the agents of groups whose report is on and signs in.
-        const signedIn = [];
-        for (const g of await listGroups()) {
-          const cfg = await dailyConfig(g.id);
-          if (cfg.enabled && cfg.baseUrl) signedIn.push(g);
-        }
-        await collectYesterday(signedIn);
+        // Agent Excel: save yesterday for every enabled login's agents.
+        await collectYesterday((await listLogins({ secret: true })).filter((l) => l.enabled && l.baseUrl));
         // Quiet when everything worked; failures are worth a message.
-        const failed = ran.filter((r) => !r.row.ok);
-        if (failed.length) {
-          await api.sendMessage({
-            chat_id: chatId,
-            text: `⚠️ របាយការណ៍ឆ្នោត: បរាជ័យ ${failed.length}/${ran.length}\n${failed.map((r) => `• ${r.group.name ?? r.group.tgId}: ${r.row.error}`).join('\n')}`,
-          });
+        const problems = ran.flatMap((r) => [
+          ...r.reports.filter((x) => !x.ok).map((x) => `• ${r.login.username} · ${x.who?.name || x.subject || 'ទាំងអស់'}: ${x.error}`),
+          ...(r.totalsError ? [`• ${r.login.username} · សរុប: ${r.totalsError}`] : []),
+        ]);
+        if (problems.length) {
+          await api.sendMessage({ chat_id: chatId, text: `⚠️ របាយការណ៍ឆ្នោត: មានបញ្ហា\n${problems.slice(0, 20).join('\n')}`.slice(0, 4000) });
         }
         break;
       }
@@ -126,7 +123,8 @@ export default async function (message) {
           break;
         }
         const status = await accessStatus(group);
-        const daily = (await dailyConfig(group.id)).enabled;
+        const lottery = await dailyConfig(group.id);
+        const daily = lottery.enabled && !!lottery.memberCode;
         await api.sendMessage({ chat_id: chatId, text: menuText(status), reply_markup: menuKeyboard(canManage(role), status, daily) });
         break;
       }

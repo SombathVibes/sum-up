@@ -92,79 +92,73 @@ export const adminGroups = table('admin_groups', {
   byGroup: index('idx_admin_groups_group').on(t.groupId),
 }));
 
-// Report source: one per group (off by default; super admins switch it on).
-// At each of `times` (Phnom Penh, 'HH:MM,HH:MM', sorted) the bot calls `url`
-// and saves what it returns as a snapshot (lib/daily.js). In the URL, {date}
-// becomes the day ('YYYY-MM-DD'), {group} the group's Telegram id and
-// {member} the bound member's user code.
-// groupId is groups.id.
-export const groupLotterySettings = table('group_lottery_settings', {
-  groupId:     integer('group_id').primaryKey(),
-  enabled:     boolean('enabled').notNull().default(false),
-  // The lottery API's base ('https://…/api/v1.0.0'); the routes are fixed:
-  // POST auth/login, GET report/daily-report/all (lib/daily.js).
-  baseUrl:     text('base_url').notNull().default(''),
-  // Also fetch the 📤 សាង side (the same report with isSend=true), saved
-  // alongside (draw_reports.body2).
-  sendReport:  boolean('send_report').notNull().default(true),
-  memberCode:  text('member_code').notNull().default(''),
-  memberName:  text('member_name').notNull().default(''),
-  agentCode:   text('agent_code').notNull().default(''),
-  times:       text('times').notNull().default('21:00'),
-  postToGroup: boolean('post_to_group').notNull().default(true),
-  // The lottery login: POST { username, password } as JSON to auth/login; the
-  // token comes back in the reply and goes on every call as
-  // 'Authorization: Bearer <token>'. The password never leaves the bot: the
-  // Mini App only learns whether one is saved.
-  username:    text('username').notNull().default(''),
-  password:    text('password').notNull().default(''),
-  // Optional HTTP Basic auth on the login request itself: the ready-made
-  // credentials (base64 of 'id:secret', without 'Basic '). Shown in the Mini
-  // App so it can be checked (unlike password).
-  basicAuth:   text('basic_auth').notNull().default(''),
-  // Extra request headers sent on both the login and the report call, one
-  // 'Name: value' per line (e.g. 'X-Platform: web').
-  headers:     text('headers').notNull().default(''),
-  // The last token from login, reused until it expires (JWT exp) or the
-  // report call answers 401; cleared whenever the settings are saved.
-  token:       text('token').notNull().default(''),
+// Lottery API logins (super admins, Mini App ⚙️ → 🔑): each with its own API,
+// credentials and run times. A run (lib/schedule.js) fetches, for that login:
+// everyone's by-draw report, the by-draw report of each member a group follows,
+// and every member's day totals (agent_daily_totals). The password and token
+// never reach the Mini App (it only learns whether a password is saved).
+export const lotteryLogins = table('lottery_logins', {
+  id:         integer('id').primaryKey({ autoIncrement: true }),
+  enabled:    boolean('enabled').notNull().default(true),
+  // The API's base ('https://…/api/v1.0.0'); the routes are fixed in lib/logins.js.
+  baseUrl:    text('base_url').notNull().default(''),
+  username:   text('username').notNull().default(''),
+  password:   text('password').notNull().default(''),
+  // HTTP Basic auth on the login request (the ready-made base64 value, without 'Basic ').
+  basicAuth:  text('basic_auth').notNull().default(''),
+  // Extra headers on every call, one 'Name: value' per line.
+  headers:    text('headers').notNull().default(''),
+  // Also fetch the 📤 សាង side (isSend=true).
+  sendReport: boolean('send_report').notNull().default(true),
+  times:      text('times').notNull().default('21:00'), // 'HH:MM,…', Phnom Penh
+  // The last token, reused until it expires or a call answers 401; cleared on save.
+  token:      text('token').notNull().default(''),
+  // The last scheduled run: its day and time slot, so a time isn't run twice.
+  ranDay:     text('ran_day').notNull().default(''),
+  ranSlot:    text('ran_slot').notNull().default(''),
 });
 
-// Report snapshot: the latest fetch per group and day; each run replaces it,
-// except that a failed run keeps the last good one. slot is the scheduled
-// 'HH:MM' it last ran for (a manual run: the minute it ran), so a time isn't
-// run twice. body is the response: for the lottery report only the fields it
-// shows (~4 KB instead of ~70 KB), otherwise the text cut at 300 KB. Kept
-// 7 days; older days are fetched again when picked.
+// A group's lottery report (super admins switch it on): which login and which
+// member under it the group follows. groupId is groups.id; agentCode is the
+// member's agent. In the group, people see only this member.
+export const groupLotterySettings = table('group_lottery_settings', {
+  groupId:    integer('group_id').primaryKey(),
+  enabled:    boolean('enabled').notNull().default(false),
+  loginId:    integer('login_id').notNull().default(0),
+  memberCode: text('member_code').notNull().default(''),
+  memberName: text('member_name').notNull().default(''),
+  agentCode:  text('agent_code').notNull().default(''),
+});
+
+// By-draw report snapshots, per login, day and subject (a member's or agent's
+// user code; '' = everyone under the login): the latest fetch, replaced on each
+// run except that a failed run keeps the last good one. slot is the 'HH:MM' it
+// last ran for. body is the reply cut to the fields shown (~4 KB); body2 the
+// 📤 សាង side, empty when off. Kept 7 days; older days are fetched again when picked.
 export const drawReports = table('draw_reports', {
   id:         integer('id').primaryKey({ autoIncrement: true }),
-  groupId:    integer('group_id').notNull(),
+  loginId:    integer('login_id').notNull(),
   day:        text('day').notNull(), // 'YYYY-MM-DD', Phnom Penh
-  slot:       text('slot').notNull().default(''), // 'HH:MM', Phnom Penh: the time it last ran for
+  subject:    text('subject').notNull().default(''),
+  slot:       text('slot').notNull().default(''),
   ranAt:      integer('ran_at').notNull(),
   ok:         boolean('ok').notNull().default(false),
   httpStatus: integer('http_status').notNull().default(0),
   body:       text('body').notNull().default(''),
   error:      text('error'),
-  // The 📤 សាង side (isSend=true, group_lottery_settings.send_report), stored the same way; empty when off.
   body2:      text('body2').notNull().default(''),
   error2:     text('error2'),
-  // Whose report it is: a member's or agent's user code, '' for everyone under
-  // the group's login (the scheduled run fetches the group's default: its bound
-  // member, else everyone; others are fetched when someone picks them).
-  subject:    text('subject').notNull().default(''),
 }, (t) => ({
-  // One per group, day and subject; also serves a group's last few days, newest first.
-  day: uniqueIndex('draw_reports_day_subject_uniq').on(t.groupId, t.day, t.subject),
+  day: uniqueIndex('draw_reports_login_day_subject_uniq').on(t.loginId, t.day, t.subject),
 }));
 
-// Lottery agents under a group's report login, found through the API (the
-// login's user code → user/list-user-levels?filterByLevel=agent) for the
-// agent Excel report (lib/agents.js). groupId is groups.id; userCode is the
-// lottery system's code for the agent.
+// Lottery agents under a login, found through the API (the login's user code
+// → user/list-user-levels?filterByLevel=agent), each with its members, for
+// the member pickers, totals and the agent Excel (lib/agents.js). userCode is
+// the lottery system's code for the agent.
 export const agents = table('agents', {
   id:       integer('id').primaryKey({ autoIncrement: true }),
-  groupId:  integer('group_id').notNull(),
+  loginId:  integer('login_id').notNull(),
   userCode: text('user_code').notNull(),
   username: text('username').notNull(),
   nickname: text('nickname').notNull().default(''),
@@ -172,7 +166,7 @@ export const agents = table('agents', {
   // first time, on 🔄, and again when a day shows a member not in it.
   members:  text('members').notNull().default('[]'),
 }, (t) => ({
-  uniq: uniqueIndex('agents_group_code_uniq').on(t.groupId, t.userCode),
+  uniq: uniqueIndex('agents_login_code_uniq').on(t.loginId, t.userCode),
 }));
 
 // One day of an agent's figures, shared by the agent Excel and 💰 សរុប:

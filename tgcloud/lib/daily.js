@@ -1,177 +1,92 @@
-// Lottery report: per group (off by default, super admins switch it on), the
-// bot signs in to the lottery API (the group's base URL; routes fixed: POST
-// auth/login, GET report/daily-report/all, plus isSend=true for 📤 សាង) at
-// each of its times, saves the reply, and posts it in the group.
+// 📥 Lottery report. Logins (lib/logins.js) hold the API, credentials and run
+// times; a super admin switches the report on for a group and picks one member
+// under a login. In the group, people see only that member: the by-draw report
+// per day (draw_reports, per login, day and subject) and 💰 totals
+// (lib/totals.js). In the private admin panel super admins may also look at
+// everyone under the login or any agent or member (🔀).
 //
-// Telegram Serverless has no timer, so the sync helper's cron (sync-helper/)
-// sends /dailyrun to the bot as the helper's user account (a super admin) at
-// each scheduled minute; pushSchedule() tells the helper which minutes those
-// are. /dailyrun runs, for every enabled group, its latest time that has passed
-// today if that time has no report yet, so a missed minute catches up on the
-// next trigger (earlier missed times are skipped, not run in a burst).
+// Scheduled runs are per login (lib/schedule.js): the sync helper's cron sends
+// /dailyrun at the logins' times.
 
-import { api, db, fetch } from 'sdk';
+import { db } from 'sdk';
 import { and, desc, eq, gte, lt, lte } from 'sdk/db';
-import { agents, groupLotterySettings, drawReports } from '../schema.js';
-import { SYNC_HELPER_SECRET, SYNC_HELPER_URL } from './config.js';
+import { agents, drawReports, groupLotterySettings } from '../schema.js';
 import { addDays, dayKey, formatTime, now, pad2, parseDayKey, today } from './dates.js';
-import { listGroups } from './store.js';
+import { getLogin, loginUser, nowHHMM, openSession, REPORT_PATH, replyReason } from './logins.js';
+
+export { nowHHMM };
 
 const OFFSET = 7 * 3600; // Phnom Penh, UTC+7
-const MAX_BODY = 300_000; // other APIs' replies; cut JSON can't be laid out
+const MAX_BODY = 300_000; // replies that aren't the lottery shape are kept cut
 const KEEP_DAYS = 7; // older days are fetched again when picked
 const TIMEOUT_MS = 20_000;
-const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
-const MAX_TIMES = 24;
 
 const escape = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** 'HH:MM' now in Phnom Penh. */
-export function nowHHMM() {
-  const d = new Date((now() + OFFSET) * 1000);
-  return `${pad2(d.getUTCHours())}:${pad2(d.getUTCMinutes())}`;
-}
-
-const DEFAULTS = { enabled: false, baseUrl: '', sendReport: true, times: '21:00', postToGroup: true, username: '', password: '', basicAuth: '', headers: '' };
-
-// The lottery API's routes under the base URL.
-const LOGIN_PATH = 'auth/login';
-const REPORT_PATH = 'report/daily-report/all';
-
-/** The base ('https://…/api/v1.0.0') from what was typed: the base itself, or any URL under it. */
-export function normalizeBase(text) {
-  const t = String(text ?? '').trim();
-  return (/^(https?:\/\/[^\s?#]+?\/api\/v[\d.]+)(?:[/?#]|$)/.exec(t)?.[1] ?? t).replace(/\/+$/, '');
-}
-
-const parseTimes = (s) => String(s ?? '').split(',').filter((t) => TIME.test(t));
-
-/**
- * A stored row (or the defaults) as a config. Without `secret` the password is
- * left out and only `hasPassword` says whether one is saved (for the Mini App).
- */
-function toConfig(row, secret) {
-  const r = row ?? DEFAULTS;
-  const cfg = {
-    enabled: !!r.enabled,
-    baseUrl: r.baseUrl ?? '',
-    sendReport: r.sendReport !== false,
-    memberCode: r.memberCode ?? '',
-    memberName: r.memberName ?? '',
-    agentCode: r.agentCode ?? '',
-    times: parseTimes(r.times),
-    postToGroup: !!r.postToGroup,
-    username: r.username ?? '',
-    hasPassword: !!r.password,
-    // The Basic value is a client id/secret, shown so it can be checked; the password never is.
-    basicAuth: r.basicAuth ?? '',
-    hasBasicAuth: !!r.basicAuth,
-    headers: r.headers ?? '',
+// ---------------------------------------------------------------- group settings
+/** A group's settings: { enabled, loginId, memberCode, memberName, agentCode } (off when none). groupId is groups.id. */
+export async function dailyConfig(groupId) {
+  const r = await db.select().from(groupLotterySettings).where(eq(groupLotterySettings.groupId, groupId)).get();
+  return {
+    enabled: !!r?.enabled,
+    loginId: r?.loginId ?? 0,
+    memberCode: r?.memberCode ?? '',
+    memberName: r?.memberName ?? '',
+    agentCode: r?.agentCode ?? '',
   };
-  if (secret) Object.assign(cfg, { password: r.password ?? '', token: r.token ?? '' });
-  return cfg;
 }
 
-/** A group's config, or the defaults (off). groupId is groups.id. `secret`: include the password (only for running it). */
-export async function dailyConfig(groupId, { secret = false } = {}) {
-  const row = await db.select().from(groupLotterySettings).where(eq(groupLotterySettings.groupId, groupId)).get();
-  return toConfig(row, secret);
-}
-
-/** Checks new values: { values } or { error } naming the bad field. */
+/** Checks a group's new settings: { values } or { error } naming the bad field. On needs a login and a member. */
 export function checkDaily(input) {
   const enabled = !!input.enabled;
-  const baseUrl = normalizeBase(input.baseUrl);
-  const list = Array.isArray(input.times) ? input.times.map(String) : [];
-  if (baseUrl && (!/^https?:\/\/\S+$/.test(baseUrl) || baseUrl.length > 500)) return { error: 'baseUrl' };
-  if (enabled && !baseUrl) return { error: 'baseUrl' };
-  if (!list.length || list.length > MAX_TIMES || !list.every((t) => TIME.test(t))) return { error: 'times' };
-  const times = [...new Set(list)].sort();
-  // The default subject: user codes are digits; the name is only for showing.
+  const loginId = Number(input.loginId) || 0;
   const memberCode = String(input.memberCode ?? '').trim();
   const agentCode = String(input.agentCode ?? '').trim();
-  if (!/^\d{0,20}$/.test(memberCode) || !/^\d{0,20}$/.test(agentCode) || (memberCode && !agentCode)) return { error: 'member' };
+  if (!/^\d{0,20}$/.test(memberCode) || !/^\d{0,20}$/.test(agentCode) || (memberCode && (!agentCode || !loginId))) return { error: 'member' };
+  if (enabled && !memberCode) return { error: 'member' };
   const memberName = memberCode ? String(input.memberName ?? '').trim().slice(0, 80) : '';
-  const username = String(input.username ?? '').trim();
-  if ((baseUrl && !username) || username.length > 200) return { error: 'username' };
-  const values = { enabled, baseUrl, sendReport: input.sendReport !== false, memberCode, memberName, agentCode: memberCode ? agentCode : '', times, postToGroup: input.postToGroup !== false, username };
-  // An empty password keeps the saved one.
-  const password = String(input.password ?? '');
-  if (password.length > 500) return { error: 'password' };
-  if (password) values.password = password;
-  // Extra headers: 'Name: value' lines; blank lines are dropped.
-  const headerLines = String(input.headers ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
-  if (headerLines.length > 20 || !headerLines.every((l) => /^[A-Za-z0-9-]{1,64}\s*:\s*[^\r\n]{0,500}$/.test(l))) return { error: 'headers' };
-  values.headers = headerLines.map((l) => l.replace(/\s*:\s*/, ': ')).join('\n');
-  // Basic auth on the login: the generated value, with or without the 'Basic ' prefix.
-  const basicAuth = String(input.basicAuth ?? '').trim().replace(/^Basic\s+/i, '');
-  if (basicAuth && (!/^[A-Za-z0-9+/=_-]+$/.test(basicAuth) || basicAuth.length > 1000)) return { error: 'basicAuth' };
-  if (!input.useBasic) values.basicAuth = '';
-  else if (basicAuth) values.basicAuth = basicAuth;
-  values.useBasic = !!input.useBasic;
-  return { values };
+  return { values: { enabled, loginId: memberCode ? loginId : 0, memberCode, memberName, agentCode: memberCode ? agentCode : '' } };
 }
 
 export async function saveDailyConfig(groupId, values) {
-  const saved = await dailyConfig(groupId);
-  if (values.baseUrl && !('password' in values) && !saved.hasPassword) {
-    throw Object.assign(new Error('password'), { field: 'password' });
-  }
-  if (values.useBasic && !('basicAuth' in values) && !saved.hasBasicAuth) {
-    throw Object.assign(new Error('basicAuth'), { field: 'basicAuth' });
-  }
-  const { useBasic: _u, ...rest } = values;
-  // New settings may mean a new login: drop the saved token.
-  const row = { ...rest, times: values.times.join(','), token: '' };
+  if (values.loginId && !(await getLogin(values.loginId))) throw Object.assign(new Error('login'), { field: 'member' });
   await db.insert(groupLotterySettings)
-    .values({ groupId, ...row })
-    .onConflictDoUpdate({ target: groupLotterySettings.groupId, set: row })
+    .values({ groupId, ...values })
+    .onConflictDoUpdate({ target: groupLotterySettings.groupId, set: values })
     .run();
-  await pushSchedule();
 }
 
-const enabledConfigs = () => db.select().from(groupLotterySettings).where(eq(groupLotterySettings.enabled, true)).all();
+/** Enabled groups following a login: [{ groupId, memberCode, memberName, agentCode }]. */
+export const groupsOfLogin = (loginId) => db.select().from(groupLotterySettings)
+  .where(and(eq(groupLotterySettings.loginId, loginId), eq(groupLotterySettings.enabled, true))).all();
 
-/**
- * Sends the helper the minutes to wake the bot at. Best effort: if the helper
- * can't be reached, the next save (or /dailyrun) tries again.
- */
-export async function pushSchedule() {
-  const times = [...new Set((await enabledConfigs()).flatMap((c) => parseTimes(c.times)))].sort();
-  try {
-    const bot = (await api.getMe()).username;
-    const res = await fetch(`${SYNC_HELPER_URL}/schedule`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${SYNC_HELPER_SECRET}` },
-      body: JSON.stringify({ times, bot }),
-    });
-    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
-    return true;
-  } catch (e) {
-    console.error('pushSchedule failed:', e.message);
-    return false;
-  }
-}
+/** A deleted login: groups that followed it are switched off. */
+export const dropLoginFromGroups = (loginId) => db.update(groupLotterySettings)
+  .set({ enabled: false, loginId: 0 }).where(eq(groupLotterySettings.loginId, loginId)).run();
 
-export const reportHistory = (groupId, limit = 30) => db.select().from(drawReports)
-  .where(eq(drawReports.groupId, groupId)).orderBy(desc(drawReports.day)).limit(limit).all();
+// ---------------------------------------------------------------- saved reports
+export const reportHistory = (loginId, limit = 30) => db.select().from(drawReports)
+  .where(eq(drawReports.loginId, loginId)).orderBy(desc(drawReports.day)).limit(limit).all();
 
 /** One day's saved report ('YYYY-MM-DD') for a subject ('' = everyone), or undefined. */
-export const reportForDay = (groupId, day, subject = '') => db.select().from(drawReports)
-  .where(and(eq(drawReports.groupId, groupId), eq(drawReports.day, day), eq(drawReports.subject, subject))).get();
+export const reportForDay = (loginId, day, subject = '') => db.select().from(drawReports)
+  .where(and(eq(drawReports.loginId, loginId), eq(drawReports.day, day), eq(drawReports.subject, subject))).get();
 
 /** Days ('YYYY-MM-DD') in [from, to] that have a successful saved report for a subject. */
-export async function reportDays(groupId, from, to, subject = '') {
+export async function reportDays(loginId, from, to, subject = '') {
   const rows = await db.select({ day: drawReports.day }).from(drawReports)
-    .where(and(eq(drawReports.groupId, groupId), eq(drawReports.subject, subject), gte(drawReports.day, from), lte(drawReports.day, to), eq(drawReports.ok, true)))
+    .where(and(eq(drawReports.loginId, loginId), eq(drawReports.subject, subject), gte(drawReports.day, from), lte(drawReports.day, to), eq(drawReports.ok, true)))
     .all();
   return new Set(rows.map((r) => r.day));
 }
 
+/** Snapshots are kept KEEP_DAYS days. */
+export const pruneSnapshots = () => db.delete(drawReports)
+  .where(lt(drawReports.day, dayKey(addDays(today(), -KEEP_DAYS)))).run();
+
 // ---------------------------------------------------------------- subjects
-// Whose report: everyone under the group's login (key ''), one of its agents,
-// or one member (key: the user code). The group's default is its bound member,
-// else everyone.
+// Whose report: everyone under the login (key ''), one of its agents, or one
+// member (key: the user code).
 
 const parseMembers = (text) => {
   try {
@@ -182,21 +97,21 @@ const parseMembers = (text) => {
   }
 };
 
-/** The group's saved agents (lib/agents.js syncs them), with their members parsed. */
-export async function savedAgents(groupId) {
-  const rows = await db.select().from(agents).where(eq(agents.groupId, groupId)).all();
+/** A login's saved agents (lib/agents.js syncs them), with their members parsed. */
+export async function savedAgents(loginId) {
+  const rows = await db.select().from(agents).where(eq(agents.loginId, loginId)).all();
   return rows.map((a) => ({ ...a, memberList: parseMembers(a.members) })).sort((a, b) => a.username.localeCompare(b.username));
 }
 
 /**
  * A subject key as { key, kind: 'all'|'agent'|'member', code, level, name,
- * agentCode }, checked against the group's saved agents and members; an
+ * nick, agentCode }, checked against the login's saved agents and members; an
  * unknown code is everyone. For everyone, code/level/name come from the login
- * (loginSubject) once signed in.
+ * once signed in (fetchReport).
  */
-export async function subjectOf(groupId, key) {
+export async function subjectOf(loginId, key) {
   if (key) {
-    for (const a of await savedAgents(groupId)) {
+    for (const a of await savedAgents(loginId)) {
       if (a.userCode === key) return { key, kind: 'agent', code: key, level: 'agent', name: a.username, nick: a.nickname, agentCode: key };
       const m = a.memberList.find((x) => x.userCode === key);
       if (m) return { key, kind: 'member', code: key, level: 'member', name: m.username, nick: m.nickname ?? '', agentCode: a.userCode };
@@ -205,16 +120,11 @@ export async function subjectOf(groupId, key) {
   return { key: '', kind: 'all', code: '', level: '', name: '', nick: '', agentCode: '' };
 }
 
-/** The group's default subject: its bound member, else everyone. */
-export const defaultSubject = (groupId, cfg) => subjectOf(groupId, cfg.memberCode);
-
-/** Fills an 'all' subject from the signed-in user's token (its code and level, e.g. master). */
-async function loginSubject(subject, request) {
-  if (subject.kind !== 'all' || subject.code) return subject;
-  const p = jwtPayload((await request.token()) ?? '');
-  if (!p) return subject;
-  const role = String(p.userRole ?? '');
-  return { ...subject, code: String(p.userCode ?? ''), level: /^[a-z]+$/i.test(role) ? role.toLowerCase() : 'agent', name: String(p.username ?? p.user_name ?? '') };
+/** A group's member as a subject (never everyone, even before the member list is saved). */
+export async function groupSubject(cfg) {
+  const s = await subjectOf(cfg.loginId, cfg.memberCode);
+  if (s.key === cfg.memberCode) return s;
+  return { key: cfg.memberCode, kind: 'member', code: cfg.memberCode, level: 'member', name: cfg.memberName || cfg.memberCode, nick: '', agentCode: cfg.agentCode };
 }
 
 /** '👥 ទាំងអស់ (login)' / '🧑‍💼 agent · nick' / '👤 member · nick'. */
@@ -225,142 +135,44 @@ export function subjectLabel(subject) {
 
 /** A subject key in button data: the code, or 'a' for everyone. */
 export const subjectToken = (key) => key || 'a';
-/** Back from button data: 'a' → '', digits → the code, anything else → undefined (the default). */
+/** Back from button data: 'a' → '', digits → the code, anything else → undefined (the group's member). */
 export const tokenSubject = (tok) => (tok === 'a' ? '' : /^\d{1,20}$/.test(tok ?? '') ? tok : undefined);
 
+// ---------------------------------------------------------------- fetching
 /**
  * The by-draw report URL for a day and subject (its user code and level: a
  * member, an agent, or the login itself for everyone); `send`: the 📤 សាង side.
  */
-export function reportUrl(cfg, day, subject, send = false) {
+export function reportUrl(login, day, subject, send = false) {
   const q = new URLSearchParams({ filterByUserCode: subject.code ?? '', filterByReportType: 'ONE', filterByDate: day, filterByLevel: subject.level || 'agent' });
   if (send) q.set('isSend', 'true');
-  return `${cfg.baseUrl}/${REPORT_PATH}?${q}`;
-}
-
-/** A dotted path ('data.token') out of a parsed reply. */
-const pick = (obj, path) => path.split('.').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), obj);
-const TOKEN_FIELDS = ['token', 'access_token', 'accessToken', 'jwt', 'id_token', 'data.token', 'data.access_token', 'data.accessToken', 'data.jwt', 'result.token', 'result.access_token'];
-
-/** A JWT's payload, or null when it isn't one. */
-export function jwtPayload(token) {
-  try {
-    const part = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(atob(part.padEnd(part.length + ((4 - (part.length % 4)) % 4), '=')));
-  } catch {
-    return null;
-  }
-}
-
-/** True when a JWT's exp is past (or within a minute); tokens that aren't JWTs never count as expired. */
-function tokenExpired(token) {
-  const exp = jwtPayload(token)?.exp;
-  return typeof exp === 'number' && exp - 60 <= now();
-}
-
-/** The API's own reason from an error reply (message / error / error_description), short. */
-function replyReason(text) {
-  let reason = '';
-  try {
-    const j = JSON.parse(text);
-    reason = [j.message, j.error_description, j.error, j.messageKey].find((v) => typeof v === 'string' && v) ?? '';
-  } catch {
-    reason = text;
-  }
-  reason = String(reason).replace(/\s+/g, ' ').trim().slice(0, 160);
-  return reason ? ` — ${reason}` : '';
-}
-
-/** The config's extra headers as an object. */
-const extraHeaders = (cfg) => Object.fromEntries(String(cfg.headers ?? '').split('\n').filter(Boolean)
-  .map((l) => [l.slice(0, l.indexOf(':')).trim(), l.slice(l.indexOf(':') + 1).trim()]));
-
-async function signIn(cfg, signal) {
-  const headers = { ...extraHeaders(cfg), 'Content-Type': 'application/json', Accept: 'application/json' };
-  if (cfg.basicAuth) headers.Authorization = `Basic ${cfg.basicAuth}`;
-  const res = await fetch(`${cfg.baseUrl}/${LOGIN_PATH}`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ username: cfg.username, password: cfg.password }),
-    signal,
-  });
-  const text = await res.text();
-  if (!res.ok) throw new Error(`Login failed: HTTP ${res.status}${replyReason(text)}`);
-  let data;
-  try {
-    data = JSON.parse(text);
-  } catch {
-    throw new Error('Login reply is not JSON');
-  }
-  for (const path of TOKEN_FIELDS) {
-    const token = pick(data, path);
-    if (typeof token === 'string' && token) return token;
-  }
-  // Names only, never values, so the right token field can be set.
-  const keys = (o, prefix = '') => Object.entries(o ?? {}).flatMap(([k, v]) => (v && typeof v === 'object' && !Array.isArray(v) && !prefix ? keys(v, `${k}.`) : [`${prefix}${k}`]));
-  throw new Error(`Login OK but no token found. Reply fields: ${keys(data).slice(0, 15).join(', ') || '—'}`);
+  return `${login.baseUrl}/${REPORT_PATH}?${q}`;
 }
 
 /**
- * GET requests signed in: extra headers and the saved token, logging in
- * when there is none or it has expired, and once more when a call with the saved token answers 401. Calls
- * may run in parallel; they share one login. Returns request(url) → Response,
- * with request.token() → the current token (logging in if needed).
+ * Fetches a subject's by-draw report for a day with a login (getLogin with
+ * secret; `request`: a session to share, else one is opened), and 📤 សាង when
+ * the login has it on, and saves it under `slot` ('HH:MM'; default: this
+ * minute). A failed fetch keeps the last good report. Returns the row, with
+ * `who` (the subject, filled in from the login for everyone).
  */
-export function openSession(group, cfg, signal) {
-  let token = cfg.token && !tokenExpired(cfg.token) ? cfg.token : null;
-  let pending = null;
-  const fresh = () => (pending ??= (async () => {
-    token = await signIn(cfg, signal);
-    await db.update(groupLotterySettings).set({ token }).where(eq(groupLotterySettings.groupId, group.id)).run();
-  })().finally(() => { pending = null; }));
-  const request = async (url) => {
-    if (!token) await fresh();
-    const used = token;
-    const call = () => fetch(url, {
-      headers: { ...extraHeaders(cfg), Accept: 'application/json, text/plain', ...(token && { Authorization: `Bearer ${token}` }) },
-      signal,
-    });
-    let res = await call();
-    if (res.status === 401) {
-      if (token === used) await fresh(); // else another call already logged in again
-      res = await call();
-    }
-    return res;
-  };
-  request.token = async () => {
-    if (!token) await fresh();
-    return token;
-  };
-  return request;
-}
-
-/**
- * Calls the group's URLs now for a subject (a key, see subjectOf; default: the
- * group's default subject), signing in first if set, saves the result as that
- * day's report for it, noting `slot` ('HH:MM'; default: this minute), and, if
- * set, posts it in the group. Returns the saved row, with `who` (the subject).
- */
-export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today()), key = cfg.memberCode) {
-  let who = await subjectOf(group.id, key);
-  const row = { groupId: group.id, day, subject: who.key, slot, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null, body2: '', error2: null };
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+export async function fetchReport(login, day, who, { slot = nowHHMM(), request } = {}) {
+  const row = { loginId: login.id, day, subject: who.key, slot, ranAt: now(), ok: false, httpStatus: 0, body: '', error: null, body2: '', error2: null };
+  const controller = request ? null : new AbortController();
+  const timer = controller && setTimeout(() => controller.abort(), TIMEOUT_MS);
   const failure = (e) => (e?.name === 'AbortError' ? `No answer in ${TIMEOUT_MS / 1000}s` : String(e?.message ?? e).slice(0, 300));
-
-  const request = openSession(group, cfg, controller.signal);
+  request ??= openSession(login, controller.signal);
   const get = async (send) => {
-    const res = await request(reportUrl(cfg, day, who, send));
+    const res = await request(reportUrl(login, day, who, send));
     const text = await res.text();
     const body = (res.ok && compactLottery(text)) || text.slice(0, MAX_BODY);
     return { res, body, error: res.ok ? null : `HTTP ${res.status}${replyReason(body)}` };
   };
-
   try {
-    who = await loginSubject(who, request);
+    if (who.kind === 'all' && !who.code) who = { ...who, ...(await loginUser(request)) };
     const first = await get(false);
     Object.assign(row, { httpStatus: first.res.status, ok: first.res.ok, body: first.body, error: first.error });
-    if (row.ok && cfg.sendReport) {
+    if (row.ok && login.sendReport) {
       try {
         const second = await get(true);
         Object.assign(row, { body2: second.body, error2: second.error });
@@ -371,50 +183,20 @@ export async function runDaily(group, cfg, slot = nowHHMM(), day = dayKey(today(
   } catch (e) {
     row.error = failure(e);
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
-  // One row per day: replace it, but a failed run keeps the last good report
-  // (only noting the time it ran for, so that time isn't retried every minute).
-  const saved = !row.ok && (await reportForDay(group.id, day, row.subject));
+  // One row per login, day and subject: replace it, but a failed run keeps the
+  // last good report (only noting the time it ran for).
+  const saved = !row.ok && (await reportForDay(login.id, day, row.subject));
   if (saved?.ok) {
     await db.update(drawReports).set({ slot }).where(eq(drawReports.id, saved.id)).run();
   } else {
-    const { groupId: _g, day: _d, subject: _s, ...set } = row;
+    const { loginId: _l, day: _d, subject: _s, ...set } = row;
     await db.insert(drawReports).values(row)
-      .onConflictDoUpdate({ target: [drawReports.groupId, drawReports.day, drawReports.subject], set })
+      .onConflictDoUpdate({ target: [drawReports.loginId, drawReports.day, drawReports.subject], set })
       .run();
   }
-  if (row.ok && cfg.postToGroup) {
-    const prev = await reportForDay(group.id, dayKey(addDays(parseDayKey(day), -1)), row.subject);
-    await api.sendMessage({ chat_id: group.tgId, text: formatReport(group, row, prev, who), parse_mode: 'HTML' }).catch((e) => console.error('daily post failed', e));
-  }
   return Object.assign(row, { who });
-}
-
-/** Snapshots are kept KEEP_DAYS days. */
-export const pruneSnapshots = () => db.delete(drawReports)
-  .where(lt(drawReports.day, dayKey(addDays(today(), -KEEP_DAYS)))).run();
-
-/**
- * /dailyrun: for every enabled group, its latest time that has passed today,
- * if that time has no report yet. Returns [{ group, row }].
- */
-export async function runDue() {
-  const day = dayKey(today());
-  const hhmm = nowHHMM();
-  const done = [];
-  await pruneSnapshots();
-  for (const cfg of await enabledConfigs()) {
-    const slot = parseTimes(cfg.times).filter((t) => t <= hhmm).at(-1);
-    if (!slot || !cfg.baseUrl) continue;
-    // Already ran for this time (or later, e.g. a manual run) today, for the default subject.
-    const { key } = await subjectOf(cfg.groupId, cfg.memberCode ?? '');
-    if (((await reportForDay(cfg.groupId, day, key))?.slot ?? '') >= slot) continue;
-    const group = (await listGroups()).find((g) => g.id === cfg.groupId);
-    if (!group) continue;
-    done.push({ group, row: await runDaily(group, toConfig(cfg, true), slot) });
-  }
-  return done;
 }
 
 /** What groups see this feature called. */
@@ -626,17 +408,17 @@ const btn = (text, callback_data) => ({ text, callback_data });
 const dm = (key) => `${key.slice(8, 10)}/${key.slice(5, 7)}`;
 
 /**
- * The 📥 day picker for a subject: today, yesterday and five more days (a
- * week per page, `page` weeks back), • on days with a saved report. Buttons:
- * DREP_<day>_<who>, DRWK_<page>_<who>, DRWHO (change subject), TOT_<who>, BACK.
+ * The 📥 day picker for a subject (who; in a group: its member): today,
+ * yesterday and five more days (a week per page, `page` weeks back), • on
+ * days with a saved report. Buttons: DREP_<day>_<who>, DRWK_<page>_<who>,
+ * TOT_<who>, and DRWHO when `canSwitch` (super admins in the private panel).
  */
-export async function dayPicker(group, page = 0, { totals = false, who } = {}) {
-  who ??= await defaultSubject(group.id, await dailyConfig(group.id));
+export async function dayPicker(cfg, who, page = 0, { canSwitch = false } = {}) {
   const tok = subjectToken(who.key);
   const now = today();
   const first = addDays(now, -7 * page);
   const days = Array.from({ length: 7 }, (_, i) => dayKey(addDays(first, -i)));
-  const saved = await reportDays(group.id, days.at(-1), days[0], who.key);
+  const saved = await reportDays(cfg.loginId, days.at(-1), days[0], who.key);
   const label = (key, i) => {
     const mark = saved.has(key) ? ' •' : '';
     if (page === 0 && i === 0) return `ថ្ងៃនេះ${mark}`;
@@ -646,9 +428,8 @@ export async function dayPicker(group, page = 0, { totals = false, who } = {}) {
   const buttons = days.map((key, i) => btn(label(key, i), `DREP_${key}_${tok}`));
   const rows = [buttons.slice(0, 2), buttons.slice(2, 5), buttons.slice(5, 7)];
   rows.push([btn('◀ សប្ដាហ៍មុន', `DRWK_${page + 1}_${tok}`), ...(page > 0 ? [btn('សប្ដាហ៍ក្រោយ ▶', `DRWK_${page - 1}_${tok}`)] : [])]);
-  rows.push([btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'DRWHO')]);
-  // Totals (lib/totals.js) from the saved per-member numbers, when the group signs in.
-  if (totals) rows.push([btn('💰 សរុប (ថ្ងៃ · សប្ដាហ៍ · ខែ)', `TOT_${tok}`)]);
+  if (canSwitch) rows.push([btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'DRWHO')]);
+  rows.push([btn('💰 សរុប (ថ្ងៃ · សប្ដាហ៍ · ខែ)', `TOT_${tok}`)]);
   rows.push([btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
   return {
     text: `<b>📥 ${REPORT_NAME}</b>\n${escape(subjectLabel(who))}\nជ្រើសរើសថ្ងៃ (• មានរបាយការណ៍រួច):`,
@@ -660,17 +441,15 @@ export async function dayPicker(group, page = 0, { totals = false, who } = {}) {
 const MAX_PICK = 60;
 
 /**
- * Pick whose numbers to see: everyone, each agent (when there is more than
- * one) and each member, from the saved agents. `target(tok)` is the button
- * data for a choice; `back` the button data to go back to. ⭐ marks the
- * group's default.
+ * Pick whose numbers to see (super admins, private panel): everyone, each
+ * agent (when there is more than one) and each member under the login.
+ * `target(tok)` is the button data for a choice; `back` the button data to go
+ * back to. ⭐ marks the group's member.
  */
-export async function subjectPicker(group, { target, back, title = `📥 ${REPORT_NAME}`, note = '' }) {
-  const list = await savedAgents(group.id);
-  const cfg = await dailyConfig(group.id);
-  const def = (await defaultSubject(group.id, cfg)).key;
-  const star = (key) => (key === def ? ' ⭐' : '');
-  const rows = [[btn(`👥 ទាំងអស់${star('')}`, target('a'))]];
+export async function subjectPicker(cfg, { target, back, title = `📥 ${REPORT_NAME}`, note = '' }) {
+  const list = await savedAgents(cfg.loginId);
+  const star = (key) => (key === cfg.memberCode ? ' ⭐' : '');
+  const rows = [[btn('👥 ទាំងអស់', target('a'))]];
   let shown = 0;
   for (const a of list) {
     if (list.length > 1) rows.push([btn(`🧑‍💼 ${a.username}${a.nickname ? ` · ${a.nickname}` : ''}${star(a.userCode)}`, target(a.userCode))]);
@@ -691,18 +470,19 @@ export async function subjectPicker(group, { target, back, title = `📥 ${REPOR
 
 /**
  * One day's report for a subject: the saved one, or (none saved yet, or
- * `refresh`) fetched now for that day and saved without posting. Buttons:
- * previous/next day, refresh (DREP!_<day>_<who>), other day, other subject, BACK.
+ * `refresh`) fetched now with the group's login and saved. Buttons:
+ * previous/next day, refresh (DREP!_<day>_<who>), other day, 🔀 when
+ * `canSwitch`, BACK.
  */
-export async function dayReportScreen(group, day, { refresh = false, key } = {}) {
+export async function dayReportScreen(group, cfg, who, day, { refresh = false, canSwitch = false } = {}) {
   const todayKey = dayKey(today());
   if (!parseDayKey(day) || day > todayKey) day = todayKey;
-  const cfg = await dailyConfig(group.id, { secret: true });
-  let who = await subjectOf(group.id, key ?? cfg.memberCode);
   const tok = subjectToken(who.key);
-  let row = refresh ? null : await reportForDay(group.id, day, who.key);
+  let row = refresh ? null : await reportForDay(cfg.loginId, day, who.key);
   if (!row) {
-    row = await runDaily(group, { ...cfg, postToGroup: false }, nowHHMM(), day, who.key);
+    const login = await getLogin(cfg.loginId, { secret: true });
+    if (!login) return { text: '⚠️ Login របស់ក្រុមនេះត្រូវបានលុប។', reply_markup: { inline_keyboard: [[btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]] } };
+    row = await fetchReport(login, day, who);
     who = row.who;
   }
   const d = parseDayKey(day);
@@ -711,13 +491,13 @@ export async function dayReportScreen(group, day, { refresh = false, key } = {})
   const nav = [btn(`◀ ${dm(prev)}`, `DREP_${prev}_${tok}`)];
   if (next <= todayKey) nav.push(btn(`${dm(next)} ▶`, `DREP_${next}_${tok}`));
   return {
-    text: formatReport(group, row, await reportForDay(group.id, prev, who.key), who),
+    text: formatReport(group, row, await reportForDay(cfg.loginId, prev, who.key), who),
     parse_mode: 'HTML',
     reply_markup: {
       inline_keyboard: [
         nav,
         [btn('🔄 ទាញថ្មី', `DREP!_${day}_${tok}`), btn('📅 ថ្ងៃផ្សេង', `DRWK_0_${tok}`)],
-        [btn('🔀 ប្តូរអ្នក', `DRWHO_${day}`), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
+        canSwitch ? [btn('🔀 ប្តូរអ្នក', `DRWHO_${day}`), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')] : [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
       ],
     },
   };

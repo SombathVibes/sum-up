@@ -1,5 +1,5 @@
-// Saves a group's Daily report settings (super admins) and sends the sync
-// helper the new schedule.
+// Saves a group's lottery report settings (super admins): on/off, and which
+// login and member it follows.
 
 import { EndpointError } from 'sdk';
 import { checkDaily, dailyConfig, saveDailyConfig } from '../lib/daily.js';

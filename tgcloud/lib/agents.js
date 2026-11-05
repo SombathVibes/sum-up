@@ -9,14 +9,16 @@
 //   - Member Tbl_03 (X:AE), សាងលេខ: date, username, 2D, 3D, reward 2D/3D,
 //     win/lose (send/total-report/all);
 //   - MainPage B1 month, D15/E15 agent username/nick, M_report the members.
-// Agents come from the group's report login (group_lottery_settings), and their
-// finished days are fetched once and kept in agent_daily_totals.
+// Agents come from a lottery login (lib/logins.js; a group's Excel uses the
+// group's login), and their finished days are fetched once and kept in
+// agent_daily_totals.
 
 import { db } from 'sdk';
 import { and, asc, eq, gte, lt, lte } from 'sdk/db';
 import { agentDailyTotals, agents } from '../schema.js';
 import { addDays, dayKey, now, parseDayKey, startOf, today } from './dates.js';
-import { dailyConfig, openSession } from './daily.js';
+import { groupsOfLogin } from './daily.js';
+import { listLogins, openSession } from './logins.js';
 import { getSetting } from './store.js';
 import { Book, getNum, hasValue, put, putFormulaIfEmpty, serial } from './xlsx.js';
 
@@ -54,12 +56,11 @@ function tokenUserCode(token) {
   }
 }
 
-/** A signed-in JSON getter for a group, from its 📥 report source. */
-async function sessionFor(group) {
-  const cfg = await dailyConfig(group.id, { secret: true });
-  if (!cfg.baseUrl) throw new Error('Set the 📥 report API URL and login for this group first.');
-  const base = cfg.baseUrl;
-  const request = openSession(group, cfg);
+/** A signed-in JSON getter for a login (getLogin with secret). */
+function sessionFor(login) {
+  if (!login?.baseUrl) throw new Error('No lottery login for this.');
+  const base = login.baseUrl;
+  const request = openSession(login);
   const json = async (path, params) => {
     const url = `${base}/${path}?${new URLSearchParams(params)}`;
     for (let attempt = 0; ; attempt++) {
@@ -101,29 +102,29 @@ async function listUsers(json, userCode, level) {
   return out;
 }
 
-// ---------------------------------------------------------------- agents of a group
-export const groupAgents = (groupId) => db.select().from(agents)
-  .where(eq(agents.groupId, groupId)).orderBy(asc(agents.username)).all();
+// ---------------------------------------------------------------- agents of a login
+export const loginAgents = (loginId) => db.select().from(agents)
+  .where(eq(agents.loginId, loginId)).orderBy(asc(agents.username)).all();
 
 export const getAgent = (id) => db.select().from(agents).where(eq(agents.id, id)).get();
 
-/** Refreshes a group's agents from the API (those under its report login). Returns the list. */
-export async function syncAgents(group) {
-  const { json, token } = await sessionFor(group);
+/** Refreshes a login's agents and their members from the API. Returns the list. */
+export async function syncAgents(login) {
+  const { json, token } = sessionFor(login);
   const code = tokenUserCode(await token());
   if (!code) throw new Error('Can’t tell the login’s user code from its token.');
   const found = await listUsers(json, code, 'agent');
   const keep = new Set(found.map((a) => a.userCode));
-  for (const a of await groupAgents(group.id)) {
+  for (const a of await loginAgents(login.id)) {
     if (!keep.has(a.userCode)) await db.delete(agents).where(eq(agents.id, a.id)).run();
   }
   for (const a of found) {
     const members = JSON.stringify(await listUsers(json, a.userCode, 'member'));
-    await db.insert(agents).values({ groupId: group.id, ...a, members })
-      .onConflictDoUpdate({ target: [agents.groupId, agents.userCode], set: { username: a.username, nickname: a.nickname, members } })
+    await db.insert(agents).values({ loginId: login.id, ...a, members })
+      .onConflictDoUpdate({ target: [agents.loginId, agents.userCode], set: { username: a.username, nickname: a.nickname, members } })
       .run();
   }
-  return groupAgents(group.id);
+  return loginAgents(login.id);
 }
 
 /** An agent's saved members; fetched (and saved) when there are none yet or `refresh`. */
@@ -198,7 +199,7 @@ const monthDays = (month) => {
  * total, members, error } (missing > 0: run again; error: why the last day
  * failed).
  */
-export async function collectDays(group, agent, wanted, { budgetMs = 12000, refresh = false } = {}) {
+export async function collectDays(login, agent, wanted, { budgetMs = 12000, refresh = false } = {}) {
   const started = Date.now();
   const todayKey = dayKey(today());
   const days = [...new Set(wanted)].filter((d) => d <= todayKey).sort();
@@ -212,7 +213,7 @@ export async function collectDays(group, agent, wanted, { budgetMs = 12000, refr
     saved.set(r.day, JSON.parse(r.data)); // a stale row still counts if it can't be fetched now
     if (isCurrent(r, r.day, todayKey) && !(refresh && r.day === todayKey)) stale.delete(r.day);
   }
-  const { json } = await sessionFor(group);
+  const { json } = sessionFor(login);
   let error = null;
   for (const day of [...stale]) {
     if (Date.now() - started > budgetMs) break;
@@ -238,19 +239,36 @@ export async function collectDays(group, agent, wanted, { budgetMs = 12000, refr
 }
 
 /** collectDays for a month ('YYYY-MM') up to yesterday: the Excel (a day goes in once it's over). */
-export const collectMonth = (group, agent, month) => {
+export const collectMonth = (login, agent, month) => {
   const yesterday = dayKey(addDays(today(), -1));
-  return collectDays(group, agent, monthDays(month).filter((d) => d <= yesterday));
+  return collectDays(login, agent, monthDays(month).filter((d) => d <= yesterday));
 };
 
 // ---------------------------------------------------------------- 💰 member totals
-/** The agents under the group's login with their members, for the Mini App's member picker. */
-export async function memberOptions(group) {
-  const list = await syncAgents(group);
-  const { json } = await sessionFor(group);
+/** A login's agents with their members (fetched again), for the Mini App. */
+export async function memberOptions(login) {
+  const list = await syncAgents(login);
+  const { json } = sessionFor(login);
   const out = [];
   for (const a of list) {
     out.push({ agentCode: a.userCode, agent: a.username, agentNick: a.nickname, members: await membersOf(json, a) });
+  }
+  return out;
+}
+
+/**
+ * Every login for the Mini App (no secrets), with the agents and members saved
+ * under it (no API call) and how many enabled groups follow it.
+ */
+export async function loginsOverview() {
+  const out = [];
+  for (const login of await listLogins()) {
+    const people = (await loginAgents(login.id)).map((a) => {
+      let members = [];
+      try { members = JSON.parse(a.members || '[]'); } catch { /* none */ }
+      return { agentCode: a.userCode, agent: a.username, agentNick: a.nickname, members };
+    });
+    out.push({ ...login, people, groups: (await groupsOfLogin(login.id)).length });
   }
   return out;
 }
@@ -265,9 +283,9 @@ const addInto = (sum, row) => { for (const f of MEMBER_FIELDS) sum[f] += num(row
  * the matching members' rows, so everyone/an agent is all its members.
  * Returns { report, send, perDay: [{ day, report, send }], missing, error }.
  */
-export async function subjectTotals(group, who, days, { refresh = false, budgetMs = 12000 } = {}) {
-  let list = await groupAgents(group.id);
-  if (!list.length || (who.agentCode && !list.some((a) => a.userCode === who.agentCode))) list = await syncAgents(group);
+export async function subjectTotals(login, who, days, { refresh = false, budgetMs = 12000 } = {}) {
+  let list = await loginAgents(login.id);
+  if (!list.length || (who.agentCode && !list.some((a) => a.userCode === who.agentCode))) list = await syncAgents(login);
   const wanted = who.kind === 'all' ? list : list.filter((a) => a.userCode === who.agentCode);
   if (!wanted.length) throw new Error(who.kind === 'all' ? 'No agents under this login.' : 'This agent isn’t under the login any more.');
   // A member by user code (rows saved before codes were kept: by username).
@@ -277,7 +295,7 @@ export async function subjectTotals(group, who, days, { refresh = false, budgetM
   let missing = 0;
   let error = null;
   for (const agent of wanted) {
-    const r = await collectDays(group, agent, days, { refresh, budgetMs: Math.max(1000, budgetMs - (Date.now() - started)) });
+    const r = await collectDays(login, agent, days, { refresh, budgetMs: Math.max(1000, budgetMs - (Date.now() - started)) });
     missing = Math.max(missing, r.missing);
     error ??= r.error;
     for (const [day, { m1, m3 }] of r.days) {
@@ -299,16 +317,16 @@ export async function subjectTotals(group, who, days, { refresh = false, budgetM
 }
 
 /**
- * For /dailyrun: saves yesterday for every agent of the given groups, so the
- * current month's Excel is usually ready at once. Failures are only logged
- * (the Excel button fetches what's missing).
+ * For /dailyrun: saves yesterday for every agent of the given logins (with
+ * secret), so the current month's Excel is usually ready at once. Failures
+ * are only logged (the Excel button fetches what's missing).
  */
-export async function collectYesterday(groups) {
+export async function collectYesterday(logins) {
   const yesterday = dayKey(addDays(today(), -1));
-  for (const group of groups) {
-    for (const agent of await groupAgents(group.id)) {
+  for (const login of logins) {
+    for (const agent of await loginAgents(login.id)) {
       // collectDays skips it when it's already saved and final.
-      const r = await collectDays(group, agent, [yesterday]).catch((e) => ({ error: e.message }));
+      const r = await collectDays(login, agent, [yesterday]).catch((e) => ({ error: e.message }));
       if (r.error) console.error(`agent day ${agent.username} ${yesterday} failed`, r.error);
     }
   }
@@ -401,13 +419,13 @@ const btn = (text, callback_data) => ({ text, callback_data });
 const KH_MONTHS = ['មករា', 'កុម្ភៈ', 'មីនា', 'មេសា', 'ឧសភា', 'មិថុនា', 'កក្កដា', 'សីហា', 'កញ្ញា', 'តុលា', 'វិច្ឆិកា', 'ធ្នូ'];
 const monthLabel = (month) => `${KH_MONTHS[Number(month.slice(5)) - 1]} ${month.slice(0, 4)}`;
 
-/** XL: the group's agents (found through the API the first time); XLSYNC refreshes them. */
-export async function agentListScreen(group, { refresh = false } = {}) {
-  let list = await groupAgents(group.id);
+/** XL: the agents under the group's login (found through the API the first time); XLSYNC refreshes them. */
+export async function agentListScreen(login, { refresh = false } = {}) {
+  let list = await loginAgents(login.id);
   let note = '';
   if (refresh || !list.length) {
     try {
-      list = await syncAgents(group);
+      list = await syncAgents(login);
       note = refresh ? '\n✅ បានទាញបញ្ជីថ្មី' : '';
     } catch (e) {
       note = `\n⚠️ ${e.message}`;
@@ -443,11 +461,11 @@ export function monthScreen(agent) {
  * workbook to chatId (the tapper's private chat; isPrivate: tapped there). Returns the screen to show afterwards (progress when
  * days are still missing, so the user taps again).
  */
-export async function sendAgentExcel(group, agent, month, chatId, api, InputFile, isPrivate = true) {
+export async function sendAgentExcel(login, agent, month, chatId, api, InputFile, isPrivate = true) {
   const back = { inline_keyboard: [[btn('🔄 ម្ដងទៀត', `XLM_${agent.id}_${month}`)], [btn('⬅️ ត្រឡប់ក្រោយ', `XLA_${agent.id}`)]] };
   const fileId = await templateFileId();
   if (!fileId) return { text: '⚠️ មិនទាន់មាន template ទេ។ Super admin ផ្ញើ template.xlsx ជាមួយ caption /settemplate ក្នុង chat ជាមួយ bot។', reply_markup: back };
-  const r = await collectMonth(group, agent, month);
+  const r = await collectMonth(login, agent, month);
   if (r.missing) {
     const why = r.error ? `\n⚠️ ${r.error.slice(0, 200)}` : '';
     return { text: `⏳ បានទាញ ${r.total - r.missing}/${r.total} ថ្ងៃ — ចុច «🔄 ម្ដងទៀត» ដើម្បីបន្ត។${why}`, reply_markup: back };

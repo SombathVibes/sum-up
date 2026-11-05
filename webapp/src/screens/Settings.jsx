@@ -1,11 +1,12 @@
-// Payment settings (super admins): the monthly price and the account details
-// customers see on ⭐ ការជាវ (defaults come from config.js), and the two files
-// the bot uses: the payment QR and the agent Excel template (also settable in
-// chat with /setqr and /settemplate).
+// Settings (super admins): the 🔑 lottery logins (Logins.jsx), the monthly
+// price and the account details customers see on ⭐ ការជាវ (defaults come from
+// config.js), and the two files the bot uses: the payment QR and the agent
+// Excel template (also settable in chat with /setqr and /settemplate).
 
 import { useEffect, useRef, useState } from 'react';
 import { call } from '../api.js';
 import { money } from '../format.js';
+import Logins from './Logins.jsx';
 
 const FIELDS = [
   ['bank', '🏦 ធនាគារ', 40],
@@ -90,6 +91,8 @@ export default function Settings() {
 
   return (
     <main className="content">
+      <Logins />
+
       {data.billingMode !== 'manual' && <p className="muted small">⚠️ BILLING_MODE = '{data.billingMode}' — ព័ត៌មានគណនីនេះប្រើតែពេលបង់ដោយដៃ។</p>}
 
       <section className="card">

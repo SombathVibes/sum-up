@@ -52,22 +52,32 @@ A web app inside Telegram for admins (`webapp/`, Vite + React), hosted by Telegr
 - **Opening it:** set `MINIAPP_URL` in `tgcloud/lib/config.js` to the address `npm run deploy` prints (`https://app<app_id>.tgcloud.ai/`), and the private admin panel gets a **🖥 Admin app** button.
 - **Endpoints** (`tgcloud/endpoints/`): `me`, `groups`, `groupReport`, `groupPayments`, `sendCsv`, `groupHistory`, `renew`, `lifetime`, `team`, `teamRole`, `teamSuper`, `teamRemove`, `settings`, `settingsSave`, `dailyGet`, `dailySave`, `dailyRun`. The page calls them with `Telegram.WebApp.Serverless.call` when it's hosted on `tgcloud.ai`, and with `fetch('/api/<name>')` otherwise (local testing).
 
-## 📥 Lottery report (per group, off by default)
+## 📥 Lottery report (logins with schedules; groups follow one member)
 
-A report the bot fetches from the lottery API on a schedule, shown in the group as **📥 របាយការណ៍ឆ្នោត**. A super admin switches it on per group in the Mini App (group → **📥 ឆ្នោត**). The settings come in four steps that fold, each showing a one-line summary when closed:
+Data comes from the lottery API through **🔑 logins**, and each group follows **one member** under a login.
 
-1. **🔗 API and login.**
-   - **API URL:** only the base (`https://…/api/v1.0.0`). Pasting any URL under it keeps just the base. The routes are fixed in the bot: `POST auth/login` and `GET report/daily-report/all`; the agents, members and totals calls hang off the same base.
-   - **Login:** username and password, sent as JSON. If the login also wants HTTP Basic auth, paste the generated value (`Basic …`, with or without the prefix). The token is found in the reply by its usual names. It is saved and reused, and the bot logs in again only when there is none, when a JWT's `exp` has passed, or when a call answers 401 (then once, with one retry). Saving the settings clears it. The password is never sent back to the Mini App: it shows only that one is saved, and leaving the field blank keeps it.
-   - **Extra headers:** one `Name: value` per line (e.g. `platformtype: p99l`), sent on every call.
-   - **📤 សាង:** also fetch the same report with `isSend=true`. It's saved with it (`body2`) and shown at the bottom: its result, bet and payout, and its lotteries, on days it has draws.
-2. **Who:** the agents and members found under the login (🔄 refreshes them), and the ⭐ default (see below).
-3. **Times:** up to 24 a day, Phnom Penh time. Pick once a day, every 1–12 hours between two hours, or times by hand.
-4. **Post to group:** also send each result to the group. Otherwise it's only saved.
+**🔑 Logins** (super admins, Mini App **⚙️ ការកំណត់**): add as many as needed. Each has:
 
-**🧪** test-runs for the default, everyone, an agent or any member. The recent results show whose each one is.
+- **API URL:** only the base (`https://…/api/v1.0.0`). Pasting any URL under it keeps just the base. The routes are fixed in the bot (`lib/logins.js`): `POST auth/login`, `GET report/daily-report/all`, and the agents, members and totals calls.
+- **Username and password**, sent as JSON. The password never goes back to the Mini App: it shows only that one is saved, and leaving the field blank keeps it.
+- **Basic auth** on the login (optional): the generated value, with or without `Basic `.
+- **Extra headers:** one `Name: value` per line (e.g. `platformtype: p99l`), sent on every call.
+- **📤 សាង:** also fetch the report with `isSend=true`, saved with it (`body2`) and shown at the bottom of the report.
+- **Run times:** up to 24 a day, Phnom Penh time: once a day, every 1–12 hours between two hours, or picked by hand. A switch pauses the schedule.
 
-**Whose report.** It can be everyone under the login (👥 ទាំងអស់), one agent (🧑‍💼, listed when the login has more than one), or one member (👤). The report call gets `filterByUserCode` and `filterByLevel` for whoever is picked:
+The token is saved on the login and reused. The bot logs in again only when there is none, when a JWT's `exp` has passed, or when a call answers 401 (then once, with one retry). Saving the login clears it. Each login's card has **🔄** (log in and fetch its agents and members again) and **▶️** (run it now, as the schedule would, and show what came back).
+
+**A login's run** saves, with one sign-in:
+
+1. everyone's by-draw report under the login (and 📤 សាង);
+2. the by-draw report of each member a group follows (once per member, however many groups follow them);
+3. today's totals for every agent's members (`agent_daily_totals`, 3 calls per agent).
+
+Nothing is posted to groups; they open 📥 from `/menu`.
+
+**A group** (Mini App: group → **📥 ឆ្នោត**, super admins): an on/off switch and the member it follows, picked from the members saved under the logins. **In the group, people see only that member:** `/menu` → **📥 របាយការណ៍ឆ្នោត** opens a day picker (today, yesterday, earlier days a week at a time; • marks saved days). A day shows its saved report, or fetches it then. The report screen has ◀ ▶ for the previous/next day, 🔄 ទាញថ្មី to fetch again, and 📅 for another day.
+
+**Super admins in the private admin panel** can also switch (**🔀 ប្តូរអ្នក**) to everyone under the group's login, an agent, or another member. The report call gets `filterByUserCode` and `filterByLevel` for whoever is shown:
 
 | Who | `filterByUserCode` | `filterByLevel` |
 |---|---|---|
@@ -75,24 +85,26 @@ A report the bot fetches from the lottery API on a schedule, shown in the group 
 | An agent | the agent's code | `agent` |
 | Everyone | the login's own code, from its token | the login's role, e.g. `master` |
 
-One call at agent or login level returns every member's draws added up. The ⭐ default is optional: it is what the scheduled runs fetch and post, and what the bot opens first. Unset, it's everyone. In the bot, **🔀 ប្តូរអ្នក** picks someone else. Their report is fetched once when first opened, then saved like the default's (`draw_reports` has one row per group, day and subject).
-
-**💰 សរុប (totals):** from the 📥 day picker, the totals of whoever is picked (everyone, an agent or a member) for a day, a week (Mon–Sun) or a month: bet (2D/3D/4D), payout, 📈 ចំណេញ / 📉 ខាត, the change from the period before, 📤 សាង, and for a week or month the days in a folded table. The numbers are the members' rows of `report/` and `send/total-report/all` (an agent or everyone: all its members added up), read from the same `agent_daily_totals` the agent Excel saves, which already holds every member (missing or out-of-date days are fetched and reused by both; today's row is reused for 5 minutes, 🔄 fetches it again). Checked: the saved days added up equal the API's own range totals.
-
-**In the group,** `/menu` → **📥 របាយការណ៍ឆ្នោត** opens a day picker (today, yesterday, earlier days a week at a time; • marks saved days). A day shows its saved report, or fetches it then. The report screen has ◀ ▶ for the previous/next day, 🔄 ទាញថ្មី to fetch again, 📅 for another day and 🔀 for someone else.
+**💰 សរុប (totals):** from the 📥 day picker, the totals for a day, a week (Mon–Sun) or a month: bet (2D/3D/4D), payout, 📈 ចំណេញ / 📉 ខាត, the change from the period before, 📤 សាង, and for a week or month the days in a folded table. In a group they're its member's. In the panel they can be anyone's: an agent or everyone is all its members added up. The numbers are the members' rows of `report/` and `send/total-report/all`, read from the same `agent_daily_totals` the agent Excel saves. Missing or out-of-date days are fetched and reused by both; today's row is reused for 5 minutes, and 🔄 fetches it again. The API fills a day's member totals only once the day has settled, so today usually shows no bets yet, while the by-draw report already has today's draws. Checked: the saved days added up equal the API's own range totals.
 
 **The lottery layout** (replies shaped like `data.items[].upperLineSale`): the day's result on top (📈 ចំណេញ / 📉 ខាត, the user/company split, bet and payout, the change from the day before), then each lottery with its result and its draws by time (`04:30 PM`) in a table folded into an expandable quote. A day with no draws yet shows the per-lottery totals. Any other JSON is shown as `key: value` lines, anything else as text. Errors include the API's own reason.
 
-**Storage:** settings in `group_lottery_settings` (one row per group); reports in `draw_reports`, **one per group and day, kept 7 days**. Each run replaces that day's report, but a failed run keeps the last good one; older days are fetched again when picked. The lottery reply is stored as just the fields it shows (~4 KB instead of ~70 KB); anything else is cut at 300 KB.
+**Storage:**
 
-**The clock:** Telegram Serverless has no timer, so the sync helper is the clock. When the settings change, the bot sends the helper its times (`POST /schedule`, kept in the helper's KV). The helper's cron runs every minute and, at each of those times, sends `/dailyrun` to the bot as its user account (a super admin). The bot deletes that message and, for every enabled group, runs its latest time that has passed today unless today's report already ran for it (or later). A missed minute catches up at the next trigger. Failures are reported in that private chat. Locally, `npm run dev` runs the same check every minute itself (`DEV_DAILY=0` turns it off), and `node dev/try-login.mjs <login url> [basic] ['Name: value']` tries a login without showing the token.
+- `lottery_logins`: one row per login, with its token and last run.
+- `group_lottery_settings`: one row per group (on/off, login, member).
+- `draw_reports`: by-draw reports, **one per login, day and subject** (`''` = everyone, else a user code), kept 7 days. Each fetch replaces it, but a failed one keeps the last good one. Older days are fetched again when picked.
+- `agents`: per login, with each agent's members.
+- `agent_daily_totals`: per agent and day.
+
+**The clock:** Telegram Serverless has no timer, so the sync helper is the clock. When a login changes, the bot sends the helper every enabled login's times (`POST /schedule`, kept in the helper's KV). The helper's cron runs every minute and, at each of those times, sends `/dailyrun` to the bot as its user account (a super admin). The bot deletes that message and, for every enabled login, runs its latest time that has passed today unless it already ran for it (`lib/schedule.js`). A missed minute catches up at the next trigger. Problems are reported in that private chat. Locally, `npm run dev` runs the same check every minute itself (`DEV_DAILY=0` turns it off), and `node dev/try-login.mjs <login url> [basic] ['Name: value']` tries a login without showing the token.
 
 ## 📊 Agent Excel (monthly workbook per agent)
 
 The lottery report tool's monthly workbook, filled by the bot. **Private chat only:** in the private admin panel (`/menu` in a private chat with the bot → pick the group), a group whose 📥 report signs in gets **📊 Excel ភ្នាក់ងារ** → pick an agent → pick a month (this month and the two before) → the `.xlsx` arrives in that chat. Super admins and admins with 👁/🛠 access to the group can use it; it isn't offered in the group itself.
 
 - **Template:** a super admin uploads the tool's `template.xlsx` in the Mini App (⚙️ ការកំណត់ → 📎 ឯកសារ), or sends it to the bot as a file with the caption `/settemplate` (checked for the MainPage, Member, M_report and 1–31 sheets). Only its Telegram file id is kept; it isn't part of this repository.
-- **Agents** (`agents`, linked to the group): found through the API from the group's report login: the login's user code (from its token) → `user/list-user-levels?filterByLevel=agent`; **🔄** refreshes the list. Members come from the same call with `filterByLevel=member` and the agent's code.
+- **Agents** (`agents`, per 🔑 login; a group's Excel lists its login's agents): found through the API: the login's user code (from its token) → `user/list-user-levels?filterByLevel=agent`; **🔄** refreshes the list. Members come from the same call with `filterByLevel=member` and the agent's code.
 - **Filled like `fill_day.py`:** MainPage B1 (month), D15/E15 (agent, nick) and BJ (`=-BI`); M_report's list = the agent's members (up to 16); day tab N rows 4–11 (MHSB=LEAP, MC=VN1, MT=VN2, TC=TN, KH, SC, TH, KP → C/D/E 2D/3D/4D, G win/lose) from `report/daily-report/all` at agent level, whose per-lottery summaries equal `fill_day.py`'s `total-report` per lottery; Member Tbl_01 from `report/total-report/all` and Tbl_03 (សាងលេខ) from `send/total-report/all`, one row per member with bets. That's **3 calls per day** whatever the number of members (the member endpoints return all members at once; the agent's are kept), checked identical to the tool's 8 + 2-per-member calls. Cells are edited in the sheet XML (never through a spreadsheet library) and Excel recalculates on open. Hand-typed sheets (Expence, Tbl_02, Tbl_04, Close) stay blank for now.
 - **Days are saved and reused** (`agent_daily_totals`, kept three months, shared with 💰 សរុប): a finished day is final once it was fetched an hour after it ended (one fetched earlier is fetched once more); today's row is reused for 5 minutes (🔄 fetches it again). The Excel itself takes the days up to yesterday. Each agent's members are saved with it (`agents.members`): fetched the first time and on 🔄, and again by themselves when a day shows a member with bets who isn't in the list. `/dailyrun` saves yesterday for every agent, so the current month is usually ready at once; missing days are fetched when asked (a whole month takes about 7 s; a tap stops after 12 s and the screen says how far it got). A 500 or 429 from the API is retried twice.
 - `lib/zip.js` reads and writes the `.xlsx` zip without packages (the runtime's DecompressionStream / CompressionStream when there, a built-in inflater otherwise).
