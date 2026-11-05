@@ -57,10 +57,27 @@ export function menuText(status) {
 }
 
 /**
- * BANK / BANKWK_<page>: the bank report's day picker, like the 📥 lottery
- * one: today, yesterday and five more days (a week per page, `page` weeks
- * back), • on days with payments (paidDays: Set of 'YYYY-MM-DD'); one tap
- * opens a day. 💰 opens the week and month picker.
+ * BANK: what 📊 opens on, like the 📥 lottery report: the report type first.
+ * 📋 opens today's report and 💰 this week's (◀ ▶ and 📅 pick another day,
+ * week or month).
+ */
+export function bankTypePicker() {
+  return {
+    text: `<b>📊 ${BANK_REPORT}</b>\nជ្រើសរើសប្រភេទរបាយការណ៍:`,
+    parse_mode: 'HTML',
+    reply_markup: keyboard([
+      [btn('📋 របាយការណ៍ប្រចាំថ្ងៃ', 'TODAY', 'primary')],
+      [btn('💰 របាយការណ៍សរុប', 'THIS_WEEK', 'primary')],
+      BACK,
+    ]),
+  };
+}
+
+/**
+ * BANKWK_<page> (a day's 📅 ថ្ងៃផ្សេង): the bank report's day picker, like the
+ * 📥 lottery one: today, yesterday and five more days (a week per page,
+ * `page` weeks back), • on days with payments (paidDays: Set of
+ * 'YYYY-MM-DD'); one tap opens a day.
  */
 export function bankDayPicker(today, page, paidDays) {
   const first = addDays(today, -7 * page);
@@ -79,13 +96,12 @@ export function bankDayPicker(today, page, paidDays) {
       buttons.slice(0, 2), buttons.slice(2, 5), buttons.slice(5, 7),
       [btn('◀ សប្ដាហ៍មុន', `BANKWK_${page + 1}`), ...(page > 0 ? [btn('សប្ដាហ៍ក្រោយ ▶', `BANKWK_${page - 1}`)] : [])],
       [btn('📅 ប្រតិទិន', `CAL_${monthKey(first)}`)],
-      [btn('💰 សរុប (សប្ដាហ៍ · ខែ)', 'BANKTOT')],
-      BACK,
+      [btn('⬅️ ត្រឡប់ក្រោយ', 'BANK')],
     ]),
   };
 }
 
-/** BANKTOT: a week (Mon–Sun) or a month, like the lottery 💰 សរុប. */
+/** BANKTOT (a week's or month's 📅 រយៈពេលផ្សេង): a week (Mon–Sun) or a month, like the lottery 💰 សរុប. */
 export function bankPeriodPicker(today) {
   return {
     text: `<b>💰 ${BANK_REPORT} · សរុប</b>\nជ្រើសរើសរយៈពេល:`,
@@ -94,8 +110,8 @@ export function bankPeriodPicker(today) {
       [btn('សប្ដាហ៍នេះ', 'THIS_WEEK'), btn('សប្ដាហ៍មុន', 'LAST_WEEK')],
       [btn('ខែនេះ', 'THIS_MONTH'), btn('ខែមុន', 'LAST_MONTH')],
       [btn('📅 ប្រតិទិនខែ', `YCAL_${today.y}`)],
-      [btn(`📋 ${BANK_REPORT} (ប្រចាំថ្ងៃ)`, 'BANK')],
-      [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
+      [btn('📋 របាយការណ៍ប្រចាំថ្ងៃ', 'TODAY')],
+      [btn('⬅️ ត្រឡប់ក្រោយ', 'BANK')],
     ]),
   };
 }
@@ -138,7 +154,7 @@ export function calendarMenu(month, today, paidDays) {
       header,
       WEEKDAYS.map((w) => blank(w)),
       ...chunk(cells, 7),
-      [btn('⬅️ ត្រឡប់ក្រោយ', 'BANK')],
+      [btn('⬅️ ត្រឡប់ក្រោយ', 'BANKWK_0')],
     ]),
   };
 }
@@ -212,8 +228,18 @@ export function reportKeyboard(key, prev, next, view, { day = false, month = fal
       ...banks.map((id) => btn(mark(view.bank === id, bankName(id)), at(key, { bank: id }))),
     ], 3));
   }
-  rows.push([btn('◀', at(prev)), btn('🔄 ទាញថ្មី', `${at(key)}!`, 'success'), ...(next ? [btn('▶', at(next))] : [])]);
-  rows.push([day ? btn('📅 ថ្ងៃផ្សេង', 'BANK') : btn('📅 រយៈពេលផ្សេង', 'BANKTOT'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
+  // The rest as on the 📥 lottery report. A day: ◀ / ▶ named by their dates,
+  // then 🔄 and 📅 ថ្ងៃផ្សេង (the day picker). A week or month: ◀ 🔄 ▶, then
+  // 📅 រយៈពេលផ្សេង (the week/month picker). ⬅️ returns to the type choice.
+  if (day) {
+    const dm = (k) => { const m = /(\d\d)-(\d\d)$/.exec(k ?? ''); return m ? `${m[2]}/${m[1]}` : ''; };
+    rows.push([btn(`◀ ${dm(prev)}`, at(prev)), ...(next ? [btn(`${dm(next)} ▶`, at(next))] : [])]);
+    rows.push([btn('🔄 ទាញថ្មី', `${at(key)}!`, 'success'), btn('📅 ថ្ងៃផ្សេង', 'BANKWK_0')]);
+  } else {
+    rows.push([btn('◀', at(prev)), btn('🔄 ទាញថ្មី', `${at(key)}!`, 'success'), ...(next ? [btn('▶', at(next))] : [])]);
+    rows.push([btn('📅 រយៈពេលផ្សេង', 'BANKTOT')]);
+  }
+  rows.push([btn('⬅️ ត្រឡប់ក្រោយ', 'BANK')]);
   return keyboard(rows);
 }
 

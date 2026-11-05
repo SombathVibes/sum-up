@@ -44,10 +44,19 @@ assert.deepEqual(days[3].map((b) => b.callback_data), ['BANKWK_1']); // no "next
 const lastWeek = ui.bankDayPicker(today, 1, new Set()).reply_markup.inline_keyboard;
 assert.deepEqual([lastWeek[0][0].callback_data, lastWeek[3].map((b) => b.callback_data)], ['DATE_2026-10-27', ['BANKWK_2', 'BANKWK_0']]);
 assert.deepEqual(ui.bankPeriodPicker(today).reply_markup.inline_keyboard.slice(0, 2).flat().map((b) => b.callback_data), ['THIS_WEEK', 'LAST_WEEK', 'THIS_MONTH', 'LAST_MONTH']);
-// Report buttons: ◀ 🔄 ▶ keep the view; ▶ only when there's a next period.
+// 📊 opens the type choice: 📋 today, 💰 this week (as the lottery report).
+assert.deepEqual(ui.bankTypePicker().reply_markup.inline_keyboard.flat().map((b) => b.callback_data), ['TODAY', 'THIS_WEEK', 'BACK']);
+// A day's buttons, as on the lottery report: ◀ / ▶ by date (keeping the view), 🔄 and 📅, then ⬅️ to the type choice.
 const kb = ui.reportKeyboard('DATE_2026-11-02', 'DATE_2026-11-01', 'DATE_2026-11-03', { cards: true, daily: false, bank: null }, { day: true }).inline_keyboard;
-assert.deepEqual(kb[1].map((b) => b.callback_data), ['DATE_2026-11-01~c', 'DATE_2026-11-02~c!', 'DATE_2026-11-03~c']);
-assert.equal(kb[1][1].style, 'success');
+assert.deepEqual(kb.slice(1).map((r) => r.map((b) => [b.text, b.callback_data])), [
+  [['◀ 01/11', 'DATE_2026-11-01~c'], ['03/11 ▶', 'DATE_2026-11-03~c']],
+  [['🔄 ទាញថ្មី', 'DATE_2026-11-02~c!'], ['📅 ថ្ងៃផ្សេង', 'BANKWK_0']],
+  [['⬅️ ត្រឡប់ក្រោយ', 'BANK']],
+]);
+assert.equal(kb[2][0].style, 'success');
+// A week: ◀ 🔄 ▶ (no ▶ on the current one), 📅 រយៈពេលផ្សេង.
+const wkb = ui.reportKeyboard('WEEK_2026-11-02', 'WEEK_2026-10-26', null, { cards: false, daily: false, bank: null }).inline_keyboard;
+assert.deepEqual(wkb.map((r) => r.map((b) => b.callback_data)), [['WEEK_2026-10-26', 'WEEK_2026-11-02!'], ['BANKTOT'], ['BANK']]);
 
 const day = { y: 2026, m: 11, d: 3 };
 const first = D.startOf(day) + 3600 * 8, last = D.startOf(day) + 3600 * 17;

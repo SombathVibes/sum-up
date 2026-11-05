@@ -31,7 +31,7 @@ import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
 import { askForReceipt, handleReceiptButton } from '../lib/receipts.js';
 import {
-  RENEW_MONTHS, bankDayPicker, bankPeriodPicker, calendarMenu, menuKeyboard, menuText, parseView, renewMenu, reportKeyboard,
+  RENEW_MONTHS, bankDayPicker, bankPeriodPicker, bankTypePicker, calendarMenu, menuKeyboard, menuText, parseView, renewMenu, reportKeyboard,
   syncMenu, yearCalendarMenu,
 } from '../lib/ui.js';
 
@@ -318,8 +318,9 @@ export default async function (query) {
         }
         return show(menuText(status), { reply_markup: { inline_keyboard } });
       }
-      // 📊 the bank report's day picker (DAILY: older messages' menu), and 💰 its weeks and months.
-      case 'BANK':
+      // 📊 the bank report: the type choice (📋 today / 💰 this week), like the lottery report;
+      // the day picker (DAILY: older messages' menu); 💰 its weeks and months.
+      case 'BANK':    return showScreen(bankTypePicker());
       case 'DAILY':   return showScreen(await bankDays(0));
       case 'BANKTOT':
       case 'WEEKLY':
