@@ -133,7 +133,7 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
     // share, send/total-report), or the normal one when there's no 📤.
     const hasSend = !!(s.commissionKhr || s.winLoseAmountKhr);
     resultHead(doc, r.winLoseAmountKhr, hasSend ? s.winLoseAmountKhr : null);
-    doc.line(`ចាក់ ៛${riel(r.commissionKhr)}`).line(`សង ៛${riel(r.rewardAmountKhr)}`);
+    doc.gap().line(`🎫 ចាក់ ៛${riel(r.commissionKhr)} · 💸 សង ៛${riel(r.rewardAmountKhr)}`);
     if (r.winLoseAmountUsd) doc.line(`💵 USD: $${Number(r.winLoseAmountUsd).toFixed(2)}`);
     const before = prev && !prev.missing ? prev.report.winLoseAmountKhr : null;
     if (before) {
@@ -150,7 +150,7 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
     table('report', r);
     // 📤 សាង below, with its own table.
     if (hasSend) {
-      doc.rule().bold(`📤 សាង · ${profit(s.winLoseAmountKhr)}`).line(`ចាក់ ៛${riel(s.commissionKhr)} · សង ៛${riel(s.rewardAmountKhr)}`);
+      doc.rule().bold(`📤 សាង · ${profit(s.winLoseAmountKhr)}`).line(`🎫 ចាក់ ៛${riel(s.commissionKhr)} · 💸 សង ៛${riel(s.rewardAmountKhr)}`);
       table('send', s);
     }
   }
