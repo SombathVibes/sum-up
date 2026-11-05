@@ -96,7 +96,8 @@ export default async function (query) {
     // Today, worked out on the tap (a button may be from yesterday).
     const now = /^(DRNOW|TOTNOW)(_(?:a|\d{1,20}))?$/.exec(key);
     if (now) key = `${now[1] === 'DRNOW' ? 'DREP' : 'TOT_D'}_${dayKey(today())}${now[2] ?? ''}`;
-    if (key === 'DRTYPE') return showScreen(typePicker(mine, { canSwitch }));
+    const type = /^DRTYPE(?:_(a|\d{1,20}))?$/.exec(key);
+    if (type) return showScreen(typePicker(await whoOf(type[1]), { canSwitch }));
     if (/^(DRWHO|TOTWHO|WHOSYNC)/.test(key)) {
       if (!canSwitch) return showScreen(await dayPicker(cfg, mine));
       let note = '';
@@ -108,9 +109,9 @@ export default async function (query) {
           note = `\n⚠️ ${String(e.message ?? e).slice(0, 200)}`;
         }
       }
-      if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 របាយការណ៍សរុប', target: (t) => `TOTNOW_${t}`, back: 'DRTYPE', note }));
+      if (key === 'TOTWHO') return showScreen(await subjectPicker(cfg, { title: '💰 របាយការណ៍សរុប', target: (t) => `TOTNOW_${t}`, back: 'BACK', note }));
       const day = /^DRWHO_(\d{4}-\d\d-\d\d)$/.exec(key)?.[1];
-      return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRNOW_${t}`), back: day ? `DREP_${day}` : 'DRTYPE', note }));
+      return showScreen(await subjectPicker(cfg, { target: (t) => (day ? `DREP_${day}_${t}` : `DRTYPE_${t}`), back: day ? `DREP_${day}` : 'BACK', note }));
     }
     if (key === 'TOT' || key.startsWith('TOT_')) {
       const pick = /^TOT(?:_(a|\d{1,20}))?$/.exec(key);
@@ -183,10 +184,10 @@ export default async function (query) {
           if (logins.length !== 1) {
             return show(logins.length ? '📥 <b>របាយការណ៍ឆ្នោត</b>\nជ្រើសរើស Login:' : '📥 មិនទាន់មាន Login ឆ្នោតទេ — បន្ថែមនៅ Mini App ⚙️។', {
               parse_mode: 'HTML',
-              reply_markup: { inline_keyboard: [...logins.map((l) => [{ text: `🔑 ${l.username}`, callback_data: `L${l.id}:DRTYPE` }]), [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'ADMIN_HOME' }]] },
+              reply_markup: { inline_keyboard: [...logins.map((l) => [{ text: `🔑 ${l.username}`, callback_data: `L${l.id}:DRWHO` }]), [{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'ADMIN_HOME' }]] },
             });
           }
-          [loginScope, data] = [logins[0].id, 'DRTYPE'];
+          [loginScope, data] = [logins[0].id, 'DRWHO'];
         }
         const key = refresh ? data.slice(0, -1) : data;
         const login = await getLogin(loginScope, { secret: true });

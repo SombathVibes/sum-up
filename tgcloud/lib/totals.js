@@ -106,7 +106,7 @@ export function totalsPicker(who, { canSwitch = false } = {}) {
         [btn('ខែនេះ', `TOT_M_${month}${w}`), btn('ខែមុន', `TOT_M_${monthKey(addMonths(parseMonthKey(month), -1))}${w}`)],
         ...(canSwitch ? [[btn('🔀 ប្តូរអ្នក (សមាជិក / ភ្នាក់ងារ)', 'TOTWHO')]] : []),
         [btn('📋 របាយការណ៍ប្រចាំថ្ងៃ', `DRWK_0${w}`)],
-        [btn('⬅️ ត្រឡប់ក្រោយ', 'DRTYPE')],
+        [btn('⬅️ ត្រឡប់ក្រោយ', `DRTYPE${w}`)],
       ],
     },
   };
@@ -158,6 +158,6 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
   return {
     text: lines.join('\n'),
     parse_mode: 'HTML',
-    reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', `TOT_${subjectToken(who.key)}`), ...(canSwitch ? [btn('🔀 ប្តូរអ្នក', 'TOTWHO')] : [])], [btn('⬅️ ត្រឡប់ក្រោយ', 'DRTYPE')]] },
+    reply_markup: { inline_keyboard: [nav, [btn('📅 រយៈពេលផ្សេង', `TOT_${subjectToken(who.key)}`), ...(canSwitch ? [btn('🔀 ប្តូរអ្នក', 'TOTWHO')] : [])], [btn('⬅️ ត្រឡប់ក្រោយ', `DRTYPE_${subjectToken(who.key)}`)]] },
   };
 }
