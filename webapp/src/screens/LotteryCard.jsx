@@ -1,8 +1,8 @@
 // A group's 🎰 lottery totals for the report's date range (groupLottery):
 // shown only when the 📥 lottery report is on for the group. Bet, payout and
 // profit or loss of the group's member, the change from the period before,
-// 📤 សាង, and the days folded. Today counts with its by-draw numbers until
-// its totals settle, which the card says.
+// 📤 សាង, and the days folded. Today counts with its by-draw numbers (both
+// sides) until its totals settle, which the card says.
 
 import { useEffect, useState } from 'react';
 import { call } from '../api.js';
@@ -49,10 +49,13 @@ export default function LotteryCard({ groupId, range }) {
             </div>
           </div>
           {(data.send.bet !== 0 || data.send.wl !== 0) && (
-            <p className="small">📤 សាង · ចាក់ {riel(data.send.bet)} · {profit(data.send.wl)}</p>
+            <p className="small">📤 សាង · ចាក់ {riel(data.send.bet)} · {profit(data.send.wl)}{data.todaySend ? ' 🔴' : ''}</p>
           )}
-          {data.today && (
-            <p className="muted small">🔴 រួមទាំងថ្ងៃនេះតាមរបាយការណ៍ប្រចាំវេន (ចាក់ {riel(data.today.bet)} · {profit(data.today.wl)}) — តួលេខពិតចូលក្រោយបិទថ្ងៃ។</p>
+          {(data.today || data.todaySend) && (
+            <p className="muted small">🔴 រួមទាំងថ្ងៃនេះតាមរបាយការណ៍ប្រចាំវេន
+              {data.today && <> (ចាក់ {riel(data.today.bet)} · {profit(data.today.wl)})</>}
+              {data.todaySend && <> · 📤 (ចាក់ {riel(data.todaySend.bet)} · {profit(data.todaySend.wl)})</>}
+              {' '}— តួលេខពិតចូលក្រោយបិទថ្ងៃ។</p>
           )}
           {data.missing > 0 && <p className="muted small">⏳ ខ្វះ {data.missing} ថ្ងៃ{data.error ? ` — ${data.error}` : ''} · បើកម្ដងទៀតដើម្បីបន្ត។</p>}
           {data.perDay.length > 0 && (

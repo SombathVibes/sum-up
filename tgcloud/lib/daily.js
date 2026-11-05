@@ -361,12 +361,12 @@ function snapshotWinLose(row) {
 /**
  * A saved report's day totals in riel ({ bet, reward, wl, user, company, usd }),
  * or null when it has none: today's live numbers, before the total reports
- * fill the day.
+ * fill the day. `send`: the 📤 សាង side (body2) instead.
  */
-export function snapshotTotals(row) {
+export function snapshotTotals(row, { send = false } = {}) {
   if (!row?.ok) return null;
   try {
-    const lotteries = lotteriesOf(JSON.parse(row.body));
+    const lotteries = lotteriesOf(JSON.parse(send ? row.body2 : row.body));
     return lotteries ? lotteryTotals(lotteries) : null;
   } catch {
     return null;

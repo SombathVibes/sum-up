@@ -3,7 +3,8 @@
 // 💰 totals, the same numbers as the bot's 💰 សរុប (agent_daily_totals,
 // missing days fetched), and the period of the same length before it. The
 // total reports fill a day only once it settles, so until then today counts
-// with its saved by-draw report (today: those numbers, or null).
+// with its saved by-draw report, both sides (today / todaySend: those
+// numbers, or null).
 
 import { addDays, dayKey, dayOf, today } from '../lib/dates.js';
 import { dailyConfig, groupSubject, reportForDay, snapshotTotals, subjectLabel } from '../lib/daily.js';
@@ -42,25 +43,30 @@ export default async function (input, ctx) {
   }
   const prev = await subjectTotals(login, who, before).catch(() => null);
   const report = pick(cur.report);
+  const send = pick(cur.send);
   const perDay = cur.perDay.filter((d) => d.report || d.send).map((d) => ({ day: d.day, bet: d.report?.commissionKhr ?? 0, wl: d.report?.winLoseAmountKhr ?? 0 }));
   // Today before it settles: its by-draw numbers instead.
   const settled = perDay.some((d) => d.day === todayKey && (d.bet || d.wl));
-  const live = days.includes(todayKey) && !settled ? snapshotTotals(await reportForDay(login.id, todayKey, who.key)) : null;
-  if (live && (live.bet || live.wl)) {
-    report.bet += live.bet;
-    report.reward += live.reward;
-    report.wl += live.wl;
+  const saved = days.includes(todayKey) && !settled ? await reportForDay(login.id, todayKey, who.key) : null;
+  const has = (t) => t && (t.bet || t.wl) ? t : null;
+  const live = has(snapshotTotals(saved));
+  const liveSend = has(snapshotTotals(saved, { send: true }));
+  const add = (into, t) => Object.assign(into, { bet: into.bet + t.bet, reward: into.reward + t.reward, wl: into.wl + t.wl });
+  if (live) {
+    add(report, live);
     perDay.push({ day: todayKey, bet: live.bet, wl: live.wl, live: true });
   }
+  if (liveSend) add(send, liveSend);
 
   return {
     enabled: true,
     member: subjectLabel(who),
     report,
-    send: pick(cur.send),
+    send,
     previous: prev && !prev.missing ? pick(prev.report) : null,
     perDay,
-    today: live && (live.bet || live.wl) ? { bet: live.bet, reward: live.reward, wl: live.wl } : null,
+    today: live && { bet: live.bet, reward: live.reward, wl: live.wl },
+    todaySend: liveSend && { bet: liveSend.bet, reward: liveSend.reward, wl: liveSend.wl },
     missing: cur.missing,
     error: cur.error,
   };
