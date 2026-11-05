@@ -171,17 +171,51 @@ export function yearCalendarMenu(year, today, paidMonths) {
 }
 
 /**
- * Under every bank report, like the lottery report: ◀ / ▶ the period before
- * and after (▶ only up to today), 🔄 (catch up through the sync helper, then
- * redraw), 📅 back to the day picker (a day) or the week/month picker, and
- * Back to the menu. Keys are absolute (DATE_ / WEEK_ / MONTH_), so a button
- * means the same period tomorrow.
+ * Report view options carried in callback data after the report key, so
+ * ◀ ▶ and 🔄 keep them: '~c' cards (day reports; the table is the default),
+ * '~d' one row per day (month reports; per week is the default), '~b<bank id>'
+ * one bank only (week and month reports).
  */
-export function reportKeyboard(key, prev, next, { day = false } = {}) {
-  return keyboard([
-    [btn('◀', prev), btn('🔄 ទាញថ្មី', `${key}!`), ...(next ? [btn('▶', next)] : [])],
-    [day ? btn('📅 ថ្ងៃផ្សេង', 'BANK') : btn('📅 រយៈពេលផ្សេង', 'BANKTOT'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
-  ]);
+export const viewKey = (key, { cards = false, daily = false, bank = null } = {}) =>
+  `${key}${cards ? '~c' : ''}${daily ? '~d' : ''}${bank ? `~b${bank}` : ''}`;
+
+export function parseView(data) {
+  const [key, ...flags] = data.split('~');
+  const view = { cards: false, daily: false, bank: null };
+  for (const f of flags) {
+    if (f === 'c') view.cards = true;
+    else if (f === 'd') view.daily = true;
+    else if (/^b\d+$/.test(f)) view.bank = Number(f.slice(1));
+    // 't' (table) is from older messages; the table is the default.
+  }
+  return { key, view };
+}
+
+/**
+ * Under every bank report: the format toggle (🗂 កាត / 📋 តារាង for a day,
+ * 📆 ប្រចាំថ្ងៃ / 🗓 ប្រចាំសប្ដាហ៍ for a month), a bank filter when a week or
+ * month has more than one bank; then, like the lottery report, ◀ / ▶ the
+ * period before and after (▶ only up to today), 🔄 (catch up through the
+ * sync helper, then redraw), 📅 back to the day picker (a day) or the
+ * week/month picker, and Back. The view rides along on every one of them.
+ * Keys are absolute (DATE_ / WEEK_ / MONTH_), so a button means the same
+ * period tomorrow.
+ */
+export function reportKeyboard(key, prev, next, view, { day = false, month = false, banks = [], bankName = String } = {}) {
+  const at = (k, changes = {}) => viewKey(k, { ...view, ...changes });
+  const rows = [];
+  if (day) rows.push([view.cards ? btn('📋 តារាង', at(key, { cards: false })) : btn('🗂 កាត', at(key, { cards: true }))]);
+  if (month) rows.push([view.daily ? btn('🗓 ប្រចាំសប្ដាហ៍', at(key, { daily: false })) : btn('📆 ប្រចាំថ្ងៃ', at(key, { daily: true }))]);
+  if (!day && banks.length > 1) {
+    const mark = (on, text) => (on ? `● ${text}` : text);
+    rows.push(...chunk([
+      btn(mark(!view.bank, 'ទាំងអស់'), at(key, { bank: null })),
+      ...banks.map((id) => btn(mark(view.bank === id, bankName(id)), at(key, { bank: id }))),
+    ], 3));
+  }
+  rows.push([btn('◀', at(prev)), btn('🔄 ទាញថ្មី', `${at(key)}!`), ...(next ? [btn('▶', at(next))] : [])]);
+  rows.push([day ? btn('📅 ថ្ងៃផ្សេង', 'BANK') : btn('📅 រយៈពេលផ្សេង', 'BANKTOT'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
+  return keyboard(rows);
 }
 
 /** The sync menu; the Lifetime switch is for super admins only. */

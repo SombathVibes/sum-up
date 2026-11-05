@@ -44,6 +44,9 @@ function summarize(rows) {
   return { bots: [...bots.values()].sort((a, b) => a.first - b.first), total };
 }
 
+// Only the currencies that actually came in: '៛ <b>109,700</b>'.
+const amounts = (x) => CURRENCIES.filter((c) => x[c]).map((c) => `${SYMBOL[c]} <b>${money(x[c])}</b>`);
+
 /**
  * Day comparison lines: vs the day before and vs the same weekday last week.
  * compare: { yesterday, lastWeek } as totalsByBot rows; a line is left out when
@@ -63,13 +66,36 @@ function dayComparison(total, weekday, compare) {
 }
 
 /**
- * One day as a compact monospace table, one row per bank plus a total, then
- * the payments themselves in a collapsible quote and the comparison lines.
- * English column headers keep the columns aligned (Khmer isn't fixed-width).
+ * One day as cards (🗂 កាត): a block per bank (payments, time span, amounts),
+ * a total when there's more than one bank, then the payments folded and the
+ * comparison lines.
  * rows: [{ botTgId, currency, total, ops, first, last }]
  * recent: [{ date, amount, currency, botTgId }], newest first
  */
-export function dayTable(day, rows, user, recent = [], compare = {}) {
+export function dayReport(day, rows, user, recent = [], compare = {}) {
+  const weekday = WEEKDAYS[new Date(Date.UTC(day.y, day.m - 1, day.d)).getUTCDay()];
+  const { bots, total } = summarize(rows);
+
+  const out = [`<b>📊 របាយការណ៍ ថ្ងៃ${weekday} ${pad2(day.d)}/${pad2(day.m)}/${day.y}</b>`, ''];
+  if (!bots.length) out.push('មិនទាន់មានប្រតិបត្តិការទេ។', '');
+  for (const b of bots) {
+    out.push(`<b>🏦 ${escapeHtml(b.name)}</b> · ${b.ops} ប្រតិ. · ${formatTime(b.first)}–${formatTime(b.last)}`, ...amounts(b), '');
+  }
+  if (bots.length > 1) {
+    out.push('━━━━━━━━━━━━', `<b>💰 សរុប · ${total.ops} ប្រតិបត្តិការ</b>`, ...amounts(total), '');
+  }
+  out.push(...paymentsFold(recent, total.ops));
+  out.push(...dayComparison(total, weekday, compare));
+  out.push(`<i>🕔 ${formatTime(now())} · ${byName(user)}</i>`);
+  return out.join('\n');
+}
+
+/**
+ * One day as a compact monospace table (📋 តារាង, the default), one row per
+ * bank plus a total. English column headers keep the columns aligned (Khmer
+ * isn't fixed-width).
+ */
+export function dayTable(day, rows, user, compare = {}) {
   const weekday = WEEKDAYS[new Date(Date.UTC(day.y, day.m - 1, day.d)).getUTCDay()];
   const { bots, total } = summarize(rows);
   // No dollar payments that day: leave the USD column out.
@@ -87,7 +113,6 @@ export function dayTable(day, rows, user, recent = [], compare = {}) {
   return [
     `<b>📊 របាយការណ៍ ថ្ងៃ${weekday} ${pad2(day.d)}/${pad2(day.m)}/${day.y}</b>`,
     bots.length ? `<pre>${escapeHtml(lines.join('\n'))}</pre>` : 'មិនទាន់មានប្រតិបត្តិការទេ។',
-    ...paymentsFold(recent, total.ops),
     ...dayComparison(total, weekday, compare),
     `<i>🕔 ${formatTime(now())} · ${byName(user)}</i>`,
   ].join('\n');
@@ -114,12 +139,13 @@ function change(cur, prev) {
 
 /**
  * A week or month as a monospace table plus a short summary.
- * data.days: totalsByDay rows
+ * data.days: totalsByDay rows (already filtered to `bank` if set)
  * data.bots: totalsByBot rows for the range; data.prev: totalsByBot rows for the
  *   period before it (same length), for the comparison line
- * opts.month: a month report (one row per Monday-to-Sunday week; a week has one per day)
+ * opts.month: a month report (one row per Monday-to-Sunday week unless
+ *   opts.daily; a week has one per day); opts.bank: one bank only
  */
-export function rangeReport(range, data, user, { month = false } = {}) {
+export function rangeReport(range, data, user, { month = false, daily = false, bank = null } = {}) {
   const first = dayOf(range.start);
   const last = dayOf(range.end);
 
@@ -138,9 +164,9 @@ export function rangeReport(range, data, user, { month = false } = {}) {
     entry.ops += r.ops;
   }
 
-  // Table rows: one per day, or (month) one per Monday-to-Sunday week.
+  // Table rows: one per day, or (month, default) one per Monday-to-Sunday week.
   let rows;
-  if (month) {
+  if (month && !daily) {
     rows = [];
     for (const e of days) {
       if (!rows.length || weekdayOf(e.day) === 1) rows.push({ from: e.day, to: e.day, ops: 0, KHR: 0, USD: 0 });
@@ -162,22 +188,23 @@ export function rangeReport(range, data, user, { month = false } = {}) {
     `${String(label).padEnd(10)}${String(ops).padStart(6)}${String(khr).padStart(15)}${usd ? String(usdCell).padStart(12) : ''}`;
   const rule = '─'.repeat(usd ? 43 : 31);
   const table = [
-    line(month ? 'Week' : 'Day', 'Ops', 'KHR', 'USD'),
+    line(month && !daily ? 'Week' : 'Day', 'Ops', 'KHR', 'USD'),
     rule,
     ...rows.map((r) => line(r.label, dotIfZero(r.ops), dotIfZero(r.KHR, money), dotIfZero(r.USD, money))),
     rule,
     line('Total', sum.ops, money(sum.KHR), money(sum.USD)),
   ];
 
+  const bankLabel = bank ? ` · ${escapeHtml(botName(bank))}` : '';
   const title = month
-    ? `📊 ខែ ${pad2(first.m)}/${first.y}`
-    : `📊 សប្ដាហ៍ ${pad2(first.d)}/${pad2(first.m)} – ${pad2(last.d)}/${pad2(last.m)}/${last.y}`;
+    ? `📊 ខែ ${pad2(first.m)}/${first.y}${bankLabel}`
+    : `📊 សប្ដាហ៍ ${pad2(first.d)}/${pad2(first.m)} – ${pad2(last.d)}/${pad2(last.m)}/${last.y}${bankLabel}`;
 
   const out = [`<b>${title}</b>`, `<pre>${escapeHtml(table.join('\n'))}</pre>`];
 
-  // One line per bank.
+  // One line per bank (only the filtered bank when filtering).
   const plain = (x) => CURRENCIES.filter((c) => x[c]).map((c) => `${SYMBOL[c]}${money(x[c])}`);
-  const { bots } = summarize(data.bots);
+  const { bots } = summarize(bank ? data.bots.filter((r) => r.botTgId === bank) : data.bots);
   for (const b of bots) out.push(`🏦 ${escapeHtml(b.name)} ${b.ops} · ${plain(b).join(' · ')}`);
 
   const active = days.filter((e) => e.ops);
@@ -191,7 +218,7 @@ export function rangeReport(range, data, user, { month = false } = {}) {
     out.push(`📅 មានប្រតិបត្តិការ ${active.length}/${days.length} ថ្ងៃ${avgText ? ` · មធ្យម ${avgText}/ថ្ងៃ` : ''}`);
   }
 
-  const prev = summarize(data.prev).total;
+  const prev = summarize(bank ? data.prev.filter((r) => r.botTgId === bank) : data.prev).total;
   const changes = CURRENCIES
     .map((c) => [c, change(sum[c], prev[c])])
     .filter(([, v]) => v)

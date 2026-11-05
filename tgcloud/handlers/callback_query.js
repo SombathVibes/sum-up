@@ -12,7 +12,7 @@ import {
   addDays, addMonths, dayKey, dayOf, dayRange, formatKhmerDate, monthKey, monthRange,
   parseDayKey, parseMonthKey, today, weekRange, yearRange,
 } from '../lib/dates.js';
-import { dayTable, money, rangeReport } from '../lib/report.js';
+import { dayReport, dayTable, money, rangeReport } from '../lib/report.js';
 import {
   getGroup, hasActiveSubscription, latestSubscription, recentPayments, renewSubscription, setLifetime,
   subscriptionHistory,
@@ -21,7 +21,7 @@ import {
 import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
-import { TERMS_TEXT } from '../lib/config.js';
+import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject } from '../lib/daily.js';
 import { getLogin } from '../lib/logins.js';
 import { agentListScreen, getAgent, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
@@ -30,7 +30,7 @@ import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
 import {
-  RENEW_MONTHS, bankDayPicker, bankPeriodPicker, calendarMenu, menuKeyboard, menuText, renewMenu, reportKeyboard,
+  RENEW_MONTHS, bankDayPicker, bankPeriodPicker, calendarMenu, menuKeyboard, menuText, parseView, renewMenu, reportKeyboard,
   syncMenu, yearCalendarMenu,
 } from '../lib/ui.js';
 
@@ -122,9 +122,8 @@ export default async function (query) {
     // A trailing '!' is the report's Refresh button: catch up through the sync
     // helper first (payments missed while the bot was down), then redraw.
     const refresh = data.endsWith('!');
-    // Older messages carry view options after a '~' (cards, per-day rows, a
-    // bank filter); the report has one layout now, so they're dropped.
-    const key = (refresh ? data.slice(0, -1) : data).split('~')[0];
+    // View options (cards, per-day rows, bank filter) follow the key: see ui.viewKey.
+    const { key, view } = parseView(refresh ? data.slice(0, -1) : data);
     await answer({ callback_query_id: query.id, text: refresh ? '🔄' : undefined });
 
     const group = scopedId ? scopedGroup : await getGroup(chatId);
@@ -284,16 +283,22 @@ export default async function (query) {
           yesterday: await totalsByBot(group.id, dayRange(addDays(report.day, -1))),
           lastWeek: await totalsByBot(group.id, dayRange(addDays(report.day, -7))),
         };
-        const text = dayTable(report.day, rows, query.from, await recentPayments(group.id, range), compare);
-        return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.prev, report.next, { day: true }) });
+        const text = view.cards
+          ? dayReport(report.day, rows, query.from, await recentPayments(group.id, range), compare)
+          : dayTable(report.day, rows, query.from, compare);
+        return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.prev, report.next, view, { day: true }) });
       }
       const data = {
-        days: await totalsByDay(group.id, report.range),
+        days: await totalsByDay(group.id, report.range, view.bank),
         bots: await totalsByBot(group.id, report.range),
         prev: await totalsByBot(group.id, report.previous),
       };
-      const text = rangeReport(report.range, data, query.from, { month: !!report.month });
-      return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.prev, report.next) });
+      const banks = [...new Set(data.bots.map((r) => r.botTgId))];
+      const text = rangeReport(report.range, data, query.from, { month: !!report.month, daily: view.daily, bank: view.bank });
+      return show(await titled(text), {
+        parse_mode: 'HTML',
+        reply_markup: reportKeyboard(report.key, report.prev, report.next, view, { month: !!report.month, banks, bankName: (id) => WHITELIST_BOTS[id] ?? String(id) }),
+      });
     };
 
     // Payments arrive live (handlers/message.js), so a report is just a query.
