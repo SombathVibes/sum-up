@@ -121,3 +121,11 @@ details summary { cursor: pointer; padding: 4px 0; }
 .row.divided { margin-top: 4px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--muted) 20%, transparent); }
 .field.mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
 .upload + .upload { padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--muted) 20%, transparent); }
+/* Folding setup steps (📥 lottery report) */
+.card.fold { display: block; }
+.card.fold > summary { list-style: none; cursor: pointer; display: flex; flex-direction: column; gap: 2px; padding-right: 22px; position: relative; }
+.card.fold > summary::-webkit-details-marker { display: none; }
+.card.fold > summary::after { content: '▾'; position: absolute; right: 0; top: 2px; color: var(--muted); transition: transform 0.15s; }
+.card.fold[open] > summary::after { transform: rotate(180deg); }
+.fold-body { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.warn-text { color: var(--warn); }

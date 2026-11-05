@@ -70,6 +70,23 @@ function Switch({ on, onChange, label }) {
   );
 }
 
+/**
+ * A setup step that folds: the header shows its number, title and a one-line
+ * summary of what's set; it starts open when that part isn't set up yet.
+ */
+function Step({ n, title, summary, warn = false, start = false, children }) {
+  const [open, setOpen] = useState(start);
+  return (
+    <details className="card fold" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        <div className="step"><span>{n}</span> {title}</div>
+        <div className={`small ${warn ? 'warn-text' : 'muted'}`}>{summary}</div>
+      </summary>
+      <div className="fold-body">{children}</div>
+    </details>
+  );
+}
+
 export default function DailyPanel({ group }) {
   const [data, setData] = useState(null);
   const [form, setForm] = useState(null);
@@ -153,6 +170,10 @@ export default function DailyPanel({ group }) {
 
   const status = !saved.enabled ? '⏸ បិទ' : `✅ បើក · ${kh(saved.times.length)} ដង/ថ្ងៃ · បន្ទាប់: ${nextRun(saved.times)}`;
   const fixed = [form.url, form.url2].some((u) => FIXED_CODE.test(u));
+  const sumLogin = form.authType === 'login' ? `🔐 ${form.username || '—'}${form.useBasic ? ' · Basic' : ''}${form.headers ? ` · ${kh(form.headers.split('\n').length)} header` : ''}` : 'មិនត្រូវការ Login';
+  const sumUrls = !form.url ? 'មិនទាន់មាន URL' : `${fixed ? '⚠️ មានលេខកូដសរសេរជាប់ · ' : ''}URL ១${form.url2 ? ' + URL ២' : ''}`;
+  const sumWho = `⭐ ${form.memberCode ? form.memberName || form.memberCode : '👥 ទាំងអស់'}${people.length ? ` · 🧑‍💼 ${kh(people.length)} · 👤 ${kh(memberCount)}` : ''}`;
+  const sumWhen = form.times.length ? `${kh(form.times.length)} ដង/ថ្ងៃ · ${form.times.length > 1 ? `${form.times[0]}–${form.times.at(-1)}` : form.times[0]}` : 'មិនទាន់មានម៉ោង';
   const memberLabel = (m) => `${m.username}${m.nickname ? ` · ${m.nickname}` : ''}`;
   const agentLabel = (a) => `${a.agent}${a.agentNick ? ` · ${a.agentNick}` : ''}`;
 
@@ -168,12 +189,9 @@ export default function DailyPanel({ group }) {
         </div>
       </section>
 
-      <section className="card">
+      <Step n={1} title="🔐 Login" summary={sumLogin} start={!savedLogin && !saved.url}>
         <div className="row">
-          <div className="grow">
-            <div className="step"><span>1</span> 🔐 Login</div>
-            <div className="muted small">{form.authType === 'login' ? 'Login មុន រួចហៅ URL ជាមួយ token' : 'API មិនត្រូវការ Login'}</div>
-          </div>
+          <div className="grow muted small">{form.authType === 'login' ? 'Login មុន រួចហៅ URL ជាមួយ token' : 'API មិនត្រូវការ Login'}</div>
           <Switch on={form.authType === 'login'} onChange={(on) => set({ authType: on ? 'login' : 'none' })} label="Login" />
         </div>
         {form.authType === 'login' && (
@@ -225,10 +243,9 @@ export default function DailyPanel({ group }) {
           <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false}
             placeholder="platformtype: p99l" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
         </label>
-      </section>
+      </Step>
 
-      <section className="card">
-        <div className="step"><span>2</span> URL ដែលត្រូវហៅ</div>
+      <Step n={2} title="URL ដែលត្រូវហៅ" summary={sumUrls} warn={fixed} start={!saved.url}>
         {base && (
           <button type="button" className="btn small" onClick={() => set({ url: lotteryUrl(base), url2: `${lotteryUrl(base)}&isSend=true` })}>
             📋 ប្រើ URL ឆ្នោត (ទាំងពីរ) ពី Login URL
@@ -256,15 +273,12 @@ export default function DailyPanel({ group }) {
             <button type="button" className="btn small" onClick={() => set({ url: unfix(form.url), url2: unfix(form.url2) })}>ជួសជុល</button>
           </div>
         )}
-      </section>
+      </Step>
 
-      <section className="card">
+      <Step n={3} title="អ្នកណា" summary={sumWho} start={savedLogin && !people.length}>
         <div className="row">
-          <div className="grow">
-            <div className="step"><span>3</span> អ្នកណា</div>
-            <div className="muted small">
-              {people.length ? `🧑‍💼 ${kh(people.length)} ភ្នាក់ងារ · 👤 ${kh(memberCount)} សមាជិក នៅក្រោម Login` : 'មិនទាន់មានបញ្ជី — ចុច 🔄'}
-            </div>
+          <div className="grow muted small">
+            {people.length ? `🧑‍💼 ${kh(people.length)} ភ្នាក់ងារ · 👤 ${kh(memberCount)} សមាជិក នៅក្រោម Login` : 'មិនទាន់មានបញ្ជី — ចុច 🔄'}
           </div>
           <button type="button" className="btn small" disabled={peopleBusy || !savedLogin} onClick={loadPeople}>{peopleBusy ? 'កំពុងទាញ…' : '🔄 ទាញបញ្ជី'}</button>
         </div>
@@ -297,10 +311,9 @@ export default function DailyPanel({ group }) {
             ))}
           </select>
         </label>
-      </section>
+      </Step>
 
-      <section className="card">
-        <div className="step"><span>4</span> ពេលណា <span className="muted small">(ម៉ោងភ្នំពេញ)</span></div>
+      <Step n={4} title={<>ពេលណា <span className="muted small">(ម៉ោងភ្នំពេញ)</span></>} summary={sumWhen} start={!saved.url}>
         <div className="segmented small">
           <button className={mode === 'once' ? 'on' : ''} onClick={() => pickMode('once')}>ម្ដង/ថ្ងៃ</button>
           <button className={mode === 'every' ? 'on' : ''} onClick={() => pickMode('every')}>រៀងរាល់…ម៉ោង</button>
@@ -348,17 +361,14 @@ export default function DailyPanel({ group }) {
             </div>
           </>
         )}
-      </section>
+      </Step>
 
-      <section className="card">
+      <Step n={5} title="ផ្ញើទៅក្រុម" summary={form.postToGroup ? '✅ ផ្ញើទៅក្រុម' : '⏸ រក្សាទុកតែប៉ុណ្ណោះ'} start={!saved.url}>
         <div className="row">
-          <div className="grow">
-            <div className="step"><span>5</span> ផ្ញើទៅក្រុម</div>
-            <div className="muted small">{form.postToGroup ? 'ផ្ញើលទ្ធផលរបស់ ⭐ លំនាំដើម ទៅក្រុម ហើយរក្សាទុក' : 'រក្សាទុកតែប៉ុណ្ណោះ (មើលតាម 📥 ក្នុង /menu)'}</div>
-          </div>
+          <div className="grow muted small">{form.postToGroup ? 'ផ្ញើលទ្ធផលរបស់ ⭐ លំនាំដើម ទៅក្រុម ហើយរក្សាទុក' : 'រក្សាទុកតែប៉ុណ្ណោះ (មើលតាម 📥 ក្នុង /menu)'}</div>
           <Switch on={form.postToGroup} onChange={(postToGroup) => set({ postToGroup })} label="Post to group" />
         </div>
-      </section>
+      </Step>
 
       {error && <p className="error">{error.message}</p>}
       {note && <p className="small">{note}</p>}
