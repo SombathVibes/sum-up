@@ -358,12 +358,22 @@ function lotteryTotals(lotteries) {
   return total;
 }
 
-/** A saved snapshot's win/lose total, for the day-before comparison; null if it has none. */
+/**
+ * A saved snapshot's final result, for the day-before comparison: its win/lose
+ * less 📤 សាង's user share (as the report's top line); null if it has none.
+ */
 function snapshotWinLose(row) {
   if (!row?.ok) return null;
   try {
     const lotteries = lotteriesOf(JSON.parse(row.body));
-    return lotteries?.length ? lotteryTotals(lotteries).wl : null;
+    if (!lotteries?.length) return null;
+    let send = null;
+    try {
+      send = row.body2 ? lotteriesOf(JSON.parse(row.body2)) : null;
+    } catch {
+      // not JSON: no 📤
+    }
+    return lotteryTotals(lotteries).wl - (send?.length ? lotteryTotals(send).user : 0);
   } catch {
     return null;
   }
@@ -436,7 +446,9 @@ function formatLottery(data, prevWl = null, data2 = null) {
   doc.gap().line(`🎫 ចាក់ ៛${riel(total.bet)} · 💸 សង ៛${riel(total.reward)}`);
   doc.line(`👤 ${escape(share.userSendShare ?? '')} ៛${riel(total.user)} · 🏢 ${escape(share.companySendShare ?? '')} ៛${riel(total.company)}`);
   if (prevWl) {
-    const pct = Math.round(((total.wl - prevWl) / Math.abs(prevWl)) * 100);
+    // Final against final (both less 📤's user share; snapshotWinLose).
+    const final = total.wl - (t2 ? t2.user : 0);
+    const pct = Math.round(((final - prevWl) / Math.abs(prevWl)) * 100);
     doc.line(`ធៀបម្សិលមិញ (៛${riel(prevWl)}): ${pct > 0 ? '↗️ +' : pct < 0 ? '↘️ ' : '→ '}${pct}%`);
   }
   lotterySections(doc, lotteries);
