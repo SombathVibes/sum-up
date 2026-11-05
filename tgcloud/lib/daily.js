@@ -472,7 +472,7 @@ function lotterySections(doc, lotteries) {
   for (const u of lotteries) {
     const s = u.summary;
     const rows = [...u.items].sort((a, b) => String(a.drawAtPP ?? a.drawAt).localeCompare(String(b.drawAtPP ?? b.drawAt)));
-    doc.gap()
+    doc.line('')
       .line(`<b>🎰 ${escape(u.lotteryType)}</b> · ${rows.length} វេន · ${profit(Number(s.winLoseAmountKhr) || 0)}`)
       .table(DRAW_COLS, rows.map((it) => [drawTime(it), riel(it.betAmountKhr ?? it.commissionKhr), riel(it.rewardAmountKhr), riel(it.winLoseAmountKhr)]), {
         total: ['Total', riel(s.commissionKhr), riel(s.rewardAmountKhr), riel(s.winLoseAmountKhr)],
