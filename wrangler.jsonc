@@ -25,7 +25,7 @@
       "binding": "DB",
       "database_name": "sumup",
       // From `npx wrangler d1 create sumup`.
-      "database_id": "REPLACE_WITH_D1_ID",
+      "database_id": "f17aa36a-e217-45a3-b87d-4b2fe8582fce",
       "migrations_dir": "cloudflare/migrations"
     }
   ],
