@@ -1,7 +1,8 @@
 // A group's lottery totals for the report's date range (groupLottery), shown
 // only when the 📥 lottery report is on for the group: two cards, 🎰 ឆ្នោត
 // and 📤 សាង, each with the member's bet, payout and profit or loss, the
-// change from the period before, and the days folded. Today counts with its
+// change from the period before, and the days folded; then 💵 the final
+// result (profit less 📤's user share, e.g. 40%). Today counts with its
 // by-draw numbers until its totals settle, which each card says.
 
 import { useEffect, useState } from 'react';
@@ -84,6 +85,22 @@ export default function LotteryCard({ groupId, range }) {
     <>
       <SideCard title="🎰 ឆ្នោត" member={data.member} side={data.report} missing={data.missing} error={data.error} />
       <SideCard title="📤 សាង" member={data.member} side={data.send} />
+      {(data.send.total.bet !== 0 || data.send.total.wl !== 0) && (
+        <section className="card lottery">
+          <div className="row">
+            <strong>💵 សរុបចុងក្រោយ</strong>
+            <span className="muted small">ចំណេញ − សាង</span>
+          </div>
+          <div className="totals">
+            <div>
+              <div className="muted small">{data.final.wl < 0 ? 'ខាត' : 'ចំណេញ'}</div>
+              <strong className={data.final.wl < 0 ? 'bad' : 'ok'}>{riel(Math.abs(data.final.wl))}</strong>
+              {versus(data.final.wl, data.final.previous)}
+            </div>
+          </div>
+          <p className="muted small">{riel(data.report.total.wl)} {data.send.total.wl < 0 ? '+' : '−'} សាង {riel(Math.abs(data.send.total.wl))}</p>
+        </section>
+      )}
     </>
   );
 }

@@ -65,11 +65,17 @@ export default async function (input, ctx) {
     return { total, previous: prev && !prev.missing ? pick(prev[field]) : null, perDay, today };
   };
 
+  const report = side('report', false);
+  const send = side('send', true);
+  // The final result: normal win/lose less 📤's user share (send's win/lose
+  // already is that share).
+  const finalOf = (a, b) => (a && b ? a.wl - b.wl : null);
   return {
     enabled: true,
     member: subjectLabel(who),
-    report: side('report', false),
-    send: side('send', true),
+    report,
+    send,
+    final: { wl: finalOf(report.total, send.total), previous: finalOf(report.previous, send.previous) },
     missing: cur.missing,
     error: cur.error,
   };

@@ -384,6 +384,19 @@ export function snapshotTotals(row, { send = false } = {}) {
   }
 }
 
+/**
+ * The final result: the normal win/lose less 📤 សាង's user share (40%), e.g.
+ * ៛283,700 − ៛10,800 = ៛272,900 (a 📤 loss adds instead). `share`: the
+ * share's label ('40%'), when known.
+ */
+export function finalLines(doc, normal, send, share = '') {
+  const label = `សាង${share ? ` ${share}` : ''}`;
+  doc.rule()
+    .bold(`💵 សរុបចុងក្រោយ · ${profit(normal - send)}`)
+    .line(`៛${riel(normal)} ${send < 0 ? '+' : '−'} ${label} ៛${riel(Math.abs(send))}`);
+  return doc;
+}
+
 /** '📈 ចំណេញ ៛158,500' (positive win/lose is the house's gain) or '📉 ខាត ៛6,600'. */
 const profit = (wl) => (wl < 0 ? `📉 ខាត ៛${riel(-wl)}` : `📈 ចំណេញ ៛${riel(wl)}`);
 
@@ -431,6 +444,8 @@ function formatLottery(data, prevWl = null, data2 = null) {
     const draws = second.reduce((n, u) => n + u.items.length, 0);
     doc.rule().bold(`📤 សាង · ${profit(t2.wl)}`).line(`ចាក់ ៛${riel(t2.bet)} · សង ៛${riel(t2.reward)} · ${draws} វេន`);
     lotterySections(doc, second);
+    // The final result: normal less the user's share of 📤 (winLoseAmountKhrUser).
+    finalLines(doc, total.wl, t2.user, second[0].summary.userSendShare ?? '');
   }
   return doc;
 }

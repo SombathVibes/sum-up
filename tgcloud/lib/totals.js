@@ -11,7 +11,7 @@
 
 import { subjectTotals } from './agents.js';
 import { addDays, addMonths, dayKey, monthKey, parseDayKey, parseMonthKey, startOf, today } from './dates.js';
-import { subjectLabel, subjectToken } from './daily.js';
+import { finalLines, subjectLabel, subjectToken } from './daily.js';
 import { col, Doc } from './rich.js';
 
 const btn = (text, callback_data, style) => ({ text, callback_data, ...(style ? { style } : {}) });
@@ -148,6 +148,8 @@ export async function totalsScreen(group, login, who, data, { refresh = false, c
     if (s.commissionKhr || s.winLoseAmountKhr) {
       doc.rule().bold(`📤 សាង · ${profit(s.winLoseAmountKhr)}`).line(`ចាក់ ៛${riel(s.commissionKhr)} · សង ៛${riel(s.rewardAmountKhr)}`);
       table('send', s);
+      // 📤's win/lose here is already the user's share (send/total-report).
+      finalLines(doc, r.winLoseAmountKhr, s.winLoseAmountKhr);
     }
   }
   if (cur.missing) doc.line('').line(`⏳ ទាញបាន ${p.days.length - cur.missing}/${p.days.length} ថ្ងៃ — ចុច «🔄 ទាញថ្មី» ដើម្បីបន្ត។${cur.error ? `\n⚠️ ${escape(cur.error.slice(0, 160))}` : ''}`);
