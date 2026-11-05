@@ -12,7 +12,7 @@ import {
   addDays, addMonths, dayKey, dayOf, dayRange, formatKhmerDate, monthKey, monthRange,
   parseDayKey, parseMonthKey, today, weekRange, yearRange,
 } from '../lib/dates.js';
-import { dayReport, dayTable, money, rangeReport } from '../lib/report.js';
+import { dayTable, money, rangeReport } from '../lib/report.js';
 import {
   getGroup, hasActiveSubscription, latestSubscription, recentPayments, renewSubscription, setLifetime,
   subscriptionHistory,
@@ -21,7 +21,7 @@ import {
 import { syncNew, syncRange } from '../lib/sync.js';
 import { adminPanel, handleTeam, urgentPanel } from '../lib/admin.js';
 import { accessStatus, priceLabel, subscriptionScreen } from '../lib/billing.js';
-import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
+import { TERMS_TEXT } from '../lib/config.js';
 import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject } from '../lib/daily.js';
 import { getLogin } from '../lib/logins.js';
 import { agentListScreen, getAgent, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
@@ -30,8 +30,8 @@ import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
 import {
-  RENEW_MONTHS, calendarMenu, dailyMenu, menuKeyboard, menuText, monthlyMenu, parseView, renewMenu, reportKeyboard,
-  syncMenu, weeklyMenu, yearCalendarMenu,
+  RENEW_MONTHS, bankPicker, calendarMenu, menuKeyboard, menuText, renewMenu, reportKeyboard,
+  syncMenu, yearCalendarMenu,
 } from '../lib/ui.js';
 
 export default async function (query) {
@@ -122,8 +122,9 @@ export default async function (query) {
     // A trailing '!' is the report's Refresh button: catch up through the sync
     // helper first (payments missed while the bot was down), then redraw.
     const refresh = data.endsWith('!');
-    // View options (format, bank filter) follow the key: see ui.viewKey.
-    const { key, view } = parseView(refresh ? data.slice(0, -1) : data);
+    // Older messages carry view options after a '~' (cards, per-day rows, a
+    // bank filter); the report has one layout now, so they're dropped.
+    const key = (refresh ? data.slice(0, -1) : data).split('~')[0];
     await answer({ callback_query_id: query.id, text: refresh ? '🔄' : undefined });
 
     const group = scopedId ? scopedGroup : await getGroup(chatId);
@@ -240,9 +241,11 @@ export default async function (query) {
         }
         return show(menuText(status), { reply_markup: { inline_keyboard } });
       }
-      case 'DAILY':   return show(...menu(dailyMenu(now)));
-      case 'WEEKLY':  return show(...menu(weeklyMenu(now)));
-      case 'MONTHLY': return show(...menu(monthlyMenu(now)));
+      // 📊 the bank report's period picker (DAILY / WEEKLY / MONTHLY: older messages' menus).
+      case 'BANK':
+      case 'DAILY':
+      case 'WEEKLY':
+      case 'MONTHLY': return showScreen(bankPicker(now));
     }
 
     if (key.startsWith('YCAL_')) {
@@ -272,22 +275,16 @@ export default async function (query) {
           yesterday: await totalsByBot(group.id, dayRange(addDays(report.day, -1))),
           lastWeek: await totalsByBot(group.id, dayRange(addDays(report.day, -7))),
         };
-        const text = view.cards
-          ? dayReport(report.day, rows, query.from, await recentPayments(group.id, range), compare)
-          : dayTable(report.day, rows, query.from, compare);
-        return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.parent, view, { day: true }) });
+        const text = dayTable(report.day, rows, query.from, await recentPayments(group.id, range), compare);
+        return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.prev, report.next) });
       }
       const data = {
-        days: await totalsByDay(group.id, report.range, view.bank),
+        days: await totalsByDay(group.id, report.range),
         bots: await totalsByBot(group.id, report.range),
         prev: await totalsByBot(group.id, report.previous),
       };
-      const banks = [...new Set(data.bots.map((r) => r.botTgId))];
-      const text = rangeReport(report.range, data, query.from, { month: !!report.month, daily: view.daily, bank: view.bank });
-      return show(await titled(text), {
-        parse_mode: 'HTML',
-        reply_markup: reportKeyboard(report.key, report.parent, view, { month: !!report.month, banks, bankName: (id) => WHITELIST_BOTS[id] ?? String(id) }),
-      });
+      const text = rangeReport(report.range, data, query.from, { month: !!report.month });
+      return show(await titled(text), { parse_mode: 'HTML', reply_markup: reportKeyboard(report.key, report.prev, report.next) });
     };
 
     // Payments arrive live (handlers/message.js), so a report is just a query.
@@ -312,24 +309,35 @@ async function catchUp(group) {
 
 /**
  * Maps a report button to { day } or { range }, plus `key`: the same report as
- * absolute callback data (so Refresh shows the same period tomorrow) and
- * `parent`: the submenu Back returns to.
+ * absolute callback data (so 🔄 shows the same period tomorrow), and `prev` /
+ * `next`: the period before and after (next is null past today). Days and
+ * months picked from the calendars (CDATE_ / CMONTH_ / YMONTH_, older
+ * messages) are the same reports.
  */
 function resolveReport(data, now) {
-  const day = (d) => d && { day: d, key: `DATE_${dayKey(d)}`, parent: 'DAILY' };
-  // Opened from the calendar (a day, or the month title): Back returns to that month's calendar.
-  const calendarDay = (d) => d && { day: d, key: `CDATE_${dayKey(d)}`, parent: `CAL_${monthKey(d)}` };
-  const calendarMonth = (m) => m && { ...month(m), key: `CMONTH_${monthKey(m)}`, parent: `CAL_${monthKey(m)}` };
-  // Picked from the year calendar: Back returns to that year.
-  const yearMonth = (m) => m && { ...month(m), key: `YMONTH_${monthKey(m)}`, parent: `YCAL_${m.y}` };
-  // `previous`: the period just before, for the comparison line.
-  const week = (d) => d && {
-    range: weekRange(d), previous: weekRange(addDays(d, -7)),
-    key: `WEEK_${dayKey(dayOf(weekRange(d).start))}`, parent: 'WEEKLY',
+  const todayKey = dayKey(now);
+  const day = (d) => d && dayKey(d) <= todayKey && {
+    day: d, key: `DATE_${dayKey(d)}`,
+    prev: `DATE_${dayKey(addDays(d, -1))}`, next: dayKey(addDays(d, 1)) <= todayKey ? `DATE_${dayKey(addDays(d, 1))}` : null,
   };
-  const month = (m) => m && {
-    month: true, range: monthRange(m.y, m.m), previous: monthRange(addMonths(m, -1).y, addMonths(m, -1).m),
-    key: `MONTH_${monthKey(m)}`, parent: 'MONTHLY',
+  // `previous`: the period just before, for the comparison line.
+  const week = (d) => {
+    if (!d || dayKey(d) > todayKey) return null;
+    const monday = dayOf(weekRange(d).start);
+    const after = addDays(monday, 7);
+    return {
+      range: weekRange(d), previous: weekRange(addDays(d, -7)), key: `WEEK_${dayKey(monday)}`,
+      prev: `WEEK_${dayKey(addDays(monday, -7))}`, next: dayKey(after) <= todayKey ? `WEEK_${dayKey(after)}` : null,
+    };
+  };
+  const month = (m) => {
+    if (!m || monthKey(m) > monthKey(now)) return null;
+    const before = addMonths(m, -1);
+    const after = addMonths(m, 1);
+    return {
+      month: true, range: monthRange(m.y, m.m), previous: monthRange(before.y, before.m), key: `MONTH_${monthKey(m)}`,
+      prev: `MONTH_${monthKey(before)}`, next: monthKey(after) <= monthKey(now) ? `MONTH_${monthKey(after)}` : null,
+    };
   };
 
   switch (data) {
@@ -341,11 +349,10 @@ function resolveReport(data, now) {
     case 'LAST_MONTH': return month(addMonths(now, -1));
   }
   if (data.startsWith('DATE_')) return day(parseDayKey(data.slice(5)));
-  if (data.startsWith('CDATE_')) return calendarDay(parseDayKey(data.slice(6)));
+  if (data.startsWith('CDATE_')) return day(parseDayKey(data.slice(6)));
   if (data.startsWith('WEEK_')) return week(parseDayKey(data.slice(5)));
   if (data.startsWith('MONTH_')) return month(parseMonthKey(data.slice(6)));
-  if (data.startsWith('CMONTH_')) return calendarMonth(parseMonthKey(data.slice(7)));
-  if (data.startsWith('YMONTH_')) return yearMonth(parseMonthKey(data.slice(7)));
+  if (data.startsWith('CMONTH_') || data.startsWith('YMONTH_')) return month(parseMonthKey(data.slice(7)));
   return null;
 }
 

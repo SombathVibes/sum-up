@@ -28,10 +28,11 @@ A payment can arrive both live and through the helper. In basic groups each acco
 
 ## Reports
 
-- **Day:** a compact table per bank (payments, KHR, USD) with a total. 🗂 កាត switches to cards: a block per bank with its time span, and the latest 10 payments in a collapsible quote. Both end with the change versus yesterday and versus the same weekday last week.
-- **Week:** a row per day; **month:** a row per week, with 📆 ប្រចាំថ្ងៃ for a row per day. Under the table: a line per bank, the busiest day, days with payments and the average per day (month), and the change versus the previous period. When a period has more than one bank, buttons filter it to one.
-- **Picking a period:** quick buttons (today, yesterday, this/last week, this/last month), a **📅 calendar** for any day (payment days marked •, future days greyed out), and a **📅 year view** for any month.
-- Every report has 🔄 (catch up through the sync helper, then redraw) and ⬅️. View options (format, bank filter, daily rows) ride in the button data (`~c`, `~d`, `~b<bank id>`), so 🔄 keeps them.
+Laid out like the 📥 lottery report: `/menu` → **📊 របាយការណ៍ធនាគារ** opens one period picker (today, yesterday, this/last week, this/last month, and a **📅 calendar** for any day; payment days are marked •, future days greyed out, and the month title opens that month).
+
+- **Day:** a table per bank (payments, KHR, USD) with a total, the day's payments folded in a collapsible quote (the latest 100), and the change versus yesterday and versus the same weekday last week.
+- **Week:** a row per day; **month:** a row per Monday-to-Sunday week. Under the table: a line per bank, the busiest day, days with payments and the average per day (month), and the change versus the previous period.
+- Every report has **◀ ▶** for the period before and after (▶ stops at today), **🔄 ទាញថ្មី** (catch up through the sync helper, then redraw), **📅 រយៈពេលផ្សេង** back to the picker, and ⬅️ to the menu. Buttons name the period absolutely (`DATE_`, `WEEK_<Monday>`, `MONTH_`), so they mean the same period tomorrow. Buttons on older messages still work: the old daily/weekly/monthly menus open the picker, and their view options (`~c`, `~d`, `~b…`) are ignored.
 
 ## Admin panel (private chat)
 

@@ -2,16 +2,18 @@
 // so no session state is stored between clicks.
 
 import {
-  addDays, addMonths, dayKey, dayOf, formatDayMonth, monthKey, monthRange, pad2, startOf, weekRange,
+  addMonths, dayKey, dayOf, monthKey, monthRange, pad2, startOf,
 } from './dates.js';
 
 const btn = (text, data) => ({ text, callback_data: data });
 // A greyed-out button that does nothing (Bot API 10.3).
 const blank = (text = ' ') => ({ text, disabled: {} });
 const keyboard = (rows) => ({ inline_keyboard: rows.filter((r) => r.length) });
-const BACK = [btn('ត្រឡប់ក្រោយ', 'BACK')];
+const BACK = [btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')];
 
 export const MENU_TEXT = 'ជ្រើសរើសរបាយការណ៍:';
+/** The bank payments report's name. */
+export const BANK_REPORT = 'របាយការណ៍ធនាគារ';
 
 // The subscription row appears only when access ends within this many days.
 const SUBSCRIBE_ROW_DAYS = 10;
@@ -27,9 +29,7 @@ const SUBSCRIBE_ROW_DAYS = 10;
  * 📊 Excel ភ្នាក់ងារ (the private admin panel, and the group's report signs in).
  */
 export const menuKeyboard = (admin = false, status = null, dailyReport = false, agentExcel = false) => keyboard([
-  [btn('ប្រចាំថ្ងៃ', 'DAILY')],
-  [btn('ប្រចាំសប្ដាហ៍', 'WEEKLY')],
-  [btn('ប្រចាំខែ', 'MONTHLY')],
+  [btn(`📊 ${BANK_REPORT}`, 'BANK')],
   // Only groups a super admin switched Daily report on for (lib/daily.js).
   dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DREPORT')] : [],
   !status || (status.kind !== 'lifetime' && status.daysLeft <= SUBSCRIBE_ROW_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
@@ -57,16 +57,18 @@ export function menuText(status) {
   return `${line}\n${MENU_TEXT}`;
 }
 
-export function dailyMenu(today) {
-  const older = [2, 3, 4, 5].map((i) => {
-    const day = addDays(today, -i);
-    return btn(formatDayMonth(day), `DATE_${dayKey(day)}`);
-  });
+/**
+ * BANK: the bank report's period picker, like the lottery 💰 សរុប: a day, a
+ * week (Mon–Sun) or a month, and the calendar for any other day or month.
+ */
+export function bankPicker(today) {
   return {
-    text: 'ជ្រើសរើសថ្ងៃ:',
+    text: `<b>📊 ${BANK_REPORT}</b>\nជ្រើសរើសរយៈពេល:`,
+    parse_mode: 'HTML',
     reply_markup: keyboard([
       [btn('ថ្ងៃនេះ', 'TODAY'), btn('ម្សិលមិញ', 'YESTERDAY')],
-      ...chunk(older, 2),
+      [btn('សប្ដាហ៍នេះ', 'THIS_WEEK'), btn('សប្ដាហ៍មុន', 'LAST_WEEK')],
+      [btn('ខែនេះ', 'THIS_MONTH'), btn('ខែមុន', 'LAST_MONTH')],
       [btn('📅 ប្រតិទិន', `CAL_${monthKey(today)}`)],
       BACK,
     ]),
@@ -111,39 +113,7 @@ export function calendarMenu(month, today, paidDays) {
       header,
       WEEKDAYS.map((w) => blank(w)),
       ...chunk(cells, 7),
-      [btn('⬅️ ត្រឡប់ក្រោយ', 'DAILY')],
-    ]),
-  };
-}
-
-export function weeklyMenu(today) {
-  const older = [2, 3, 4, 5].map((i) => {
-    const { start, end } = weekRange(addDays(today, -7 * i));
-    const first = dayOf(start);
-    return btn(`${formatDayMonth(first)} - ${formatDayMonth(dayOf(end))}`, `WEEK_${dayKey(first)}`);
-  });
-  return {
-    text: 'ជ្រើសរើសសប្ដាហ៍:',
-    reply_markup: keyboard([
-      [btn('សប្ដាហ៍នេះ', 'THIS_WEEK'), btn('សប្ដាហ៍មុន', 'LAST_WEEK')],
-      ...chunk(older, 2),
-      BACK,
-    ]),
-  };
-}
-
-export function monthlyMenu(today) {
-  const older = [2, 3, 4].map((i) => {
-    const month = addMonths(today, -i);
-    return btn(`${pad2(month.m)}-${month.y}`, `MONTH_${monthKey(month)}`);
-  });
-  return {
-    text: 'ជ្រើសរើសខែ:',
-    reply_markup: keyboard([
-      [btn('ខែនេះ', 'THIS_MONTH'), btn('ខែមុន', 'LAST_MONTH')],
-      older,
-      [btn('📅 ប្រតិទិនខែ', `YCAL_${today.y}`)],
-      BACK,
+      [btn('⬅️ ត្រឡប់ក្រោយ', 'BANK')],
     ]),
   };
 }
@@ -169,50 +139,22 @@ export function yearCalendarMenu(year, today, paidMonths) {
     reply_markup: keyboard([
       [btn('◀', `YCAL_${year - 1}`), blank(String(year)), year >= today.y ? blank('▶') : btn('▶', `YCAL_${year + 1}`)],
       ...chunk(cells, 3),
-      [btn('⬅️ ត្រឡប់ក្រោយ', 'MONTHLY')],
+      [btn('⬅️ ត្រឡប់ក្រោយ', 'BANK')],
     ]),
   };
 }
 
 /**
- * Report view options carried in callback data after the report key, so
- * Refresh and other buttons keep them: '~c' cards (day reports; the table is
- * the default), '~d' one row per day (month reports; per week is the default),
- * '~b<bank id>' one bank only (week and month reports).
+ * Under every bank report, like the lottery report: ◀ / ▶ the period before
+ * and after (▶ only up to today), 🔄 (catch up through the sync helper, then
+ * redraw), 📅 another period, and Back to the menu. Keys are absolute
+ * (DATE_ / WEEK_ / MONTH_), so a button means the same period tomorrow.
  */
-export const viewKey = (key, { cards = false, daily = false, bank = null } = {}) =>
-  `${key}${cards ? '~c' : ''}${daily ? '~d' : ''}${bank ? `~b${bank}` : ''}`;
-
-export function parseView(data) {
-  const [key, ...flags] = data.split('~');
-  const view = { cards: false, daily: false, bank: null };
-  for (const f of flags) {
-    if (f === 'c') view.cards = true;
-    else if (f === 'd') view.daily = true;
-    else if (/^b\d+$/.test(f)) view.bank = Number(f.slice(1));
-    // 't' (table) is from older messages; the table is the default now.
-  }
-  return { key, view };
-}
-
-/**
- * Under every report: format toggles, a bank filter when the period has more
- * than one bank, Refresh (catch up through the sync helper), and Back.
- */
-export function reportKeyboard(key, parent, view, { day = false, month = false, banks = [], bankName = String } = {}) {
-  const at = (changes) => viewKey(key, { ...view, ...changes });
-  const rows = [];
-  if (day) rows.push([view.cards ? btn('📋 តារាង', at({ cards: false })) : btn('🗂 កាត', at({ cards: true }))]);
-  if (month) rows.push([view.daily ? btn('🗓 ប្រចាំសប្ដាហ៍', at({ daily: false })) : btn('📆 ប្រចាំថ្ងៃ', at({ daily: true }))]);
-  if (!day && banks.length > 1) {
-    const mark = (on, text) => (on ? `● ${text}` : text);
-    rows.push(...chunk([
-      btn(mark(!view.bank, 'ទាំងអស់'), at({ bank: null })),
-      ...banks.map((id) => btn(mark(view.bank === id, bankName(id)), at({ bank: id }))),
-    ], 3));
-  }
-  rows.push([btn('🔄 ធ្វើបច្ចុប្បន្នភាព', `${at({})}!`), btn('⬅️ ត្រឡប់ក្រោយ', parent)]);
-  return keyboard(rows);
+export function reportKeyboard(key, prev, next) {
+  return keyboard([
+    [btn('◀', prev), btn('🔄 ទាញថ្មី', `${key}!`), ...(next ? [btn('▶', next)] : [])],
+    [btn('📅 រយៈពេលផ្សេង', 'BANK'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')],
+  ]);
 }
 
 /** The sync menu; the Lifetime switch is for super admins only. */
