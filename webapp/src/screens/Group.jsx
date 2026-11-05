@@ -73,6 +73,9 @@ export default function Group({ group, startView, onClose, onChanged }) {
             <input type="date" value={range.to} min={range.from} max={todayKey()} onChange={(e) => e.target.value && setRange({ ...range, to: e.target.value })} />
           </div>
 
+          {/* The lottery summary first (only when the group has it on), then the bank totals. */}
+          <LotteryCard groupId={group.tgId} range={range} />
+
           {error && <p className="error">{error.message}</p>}
           {!report && !error && <p className="center muted">កំពុងផ្ទុក…</p>}
           {report && (
@@ -83,8 +86,6 @@ export default function Group({ group, startView, onClose, onChanged }) {
                 <div><div className="muted small">ប្រតិ.</div><strong>{report.total.ops}</strong></div>
               </section>
               <p className="muted small">ធៀបនឹងរយៈពេលស្មើគ្នាមុននេះ</p>
-
-              <LotteryCard groupId={group.tgId} range={range} />
 
               <section className="card">
                 <div className="row">

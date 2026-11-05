@@ -12,6 +12,8 @@ export function money(cents) {
 }
 
 export const amount = (cents, currency) => (currency === 'USD' ? `$${money(cents)}` : `៛${money(cents)}`);
+/** Whole riel (the lottery's numbers, not hundredths): '៛337,000'. */
+export const riel = (n) => amount(Math.round(Number(n) || 0) * 100, 'KHR');
 
 /** Today in Phnom Penh as 'YYYY-MM-DD'. */
 export function todayKey() {

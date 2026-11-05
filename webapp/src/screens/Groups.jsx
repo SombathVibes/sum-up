@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import BarChart from '../components/BarChart.jsx';
-import { accessBadge, amount } from '../format.js';
+import { accessBadge, amount, riel } from '../format.js';
 
 const FILTERS = [
   ['all', 'ទាំងអស់'],
@@ -60,6 +60,13 @@ export default function Groups({ groups, onOpen }) {
               <span>៣០ ថ្ងៃ: {amount(sum30(g), 'KHR')}{usd ? ` · ${amount(usd, 'USD')}` : ''}</span>
               <span>{ops} ប្រតិ.{g.role === 'view' ? ' · 👁' : ''}</span>
             </div>
+            {g.lottery && (
+              // The lottery's last 30 days: win/lose, 📤 សាង, and 💵 the final result (win/lose less សាង).
+              <div className="row small lottery-line">
+                <span>🎰 {riel(g.lottery.wl)} · 📤 {riel(g.lottery.send)}</span>
+                <strong className={g.lottery.final < 0 ? 'bad' : 'ok'}>💵 {riel(g.lottery.final)}{g.lottery.live ? ' 🔴' : ''}</strong>
+              </div>
+            )}
           </button>
         );
       })}

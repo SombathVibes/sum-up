@@ -136,3 +136,9 @@ details summary { cursor: pointer; padding: 4px 0; }
 .lottery p { margin: 8px 0 0; }
 .lottery details.days { margin-top: 8px; }
 .lottery details.days summary { cursor: pointer; }
+
+/* 🎰 the lottery summary: 💵 final result first, then each side */
+.lottery .final { margin: 8px 0 4px; }
+.lottery .final .big { display: block; font-size: 22px; }
+.lottery .side { border-top: 1px solid var(--line, rgba(127, 127, 127, .2)); margin-top: 10px; padding-top: 8px; }
+.lottery-line { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line, rgba(127, 127, 127, .2)); }

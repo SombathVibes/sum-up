@@ -376,6 +376,40 @@ export async function subjectTotals(login, who, days, { refresh = false, budgetM
 }
 
 /**
+ * subjectTotals from saved rows only, with no API call (the Mini App's group
+ * list, which shows every group at once): days not saved yet count as nothing.
+ * Takes the login's id. Same shape: { report, send, perDay, missing: 0, error: null }.
+ */
+export async function savedSubjectTotals(loginId, who, days) {
+  const list = await loginAgents(loginId);
+  const wanted = who.kind === 'all' ? list : list.filter((a) => a.userCode === who.agentCode);
+  const match = who.kind === 'member' ? (x) => (x.userCode ? x.userCode === who.code : x.username === who.name) : () => true;
+  const sorted = [...days].sort();
+  const perDayMap = new Map();
+  for (const agent of wanted) {
+    const rows = sorted.length ? await db.select().from(agentDailyTotals)
+      .where(and(eq(agentDailyTotals.agentCode, agent.userCode), gte(agentDailyTotals.day, sorted[0]), lte(agentDailyTotals.day, sorted.at(-1))))
+      .all() : [];
+    for (const r of rows) {
+      const { m1 = [], m3 = [] } = JSON.parse(r.data);
+      const one = perDayMap.get(r.day) ?? { day: r.day, report: null, send: null };
+      for (const [field, list2] of [['report', m1], ['send', m3]]) {
+        for (const x of list2.filter(match)) one[field] = addInto(one[field] ?? ZERO(), x);
+      }
+      perDayMap.set(r.day, one);
+    }
+  }
+  const report = ZERO();
+  const send = ZERO();
+  const perDay = [...perDayMap.values()].sort((x, y) => x.day.localeCompare(y.day));
+  for (const one of perDay) {
+    addInto(report, one.report);
+    addInto(send, one.send);
+  }
+  return { report, send, perDay, missing: 0, error: null };
+}
+
+/**
  * For /dailyrun: saves yesterday for every agent of the given logins (with
  * secret), so the current month's Excel is usually ready at once. Failures
  * are only logged (the Excel button fetches what's missing).
