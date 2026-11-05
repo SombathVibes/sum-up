@@ -526,7 +526,7 @@ const MAX_PICK = 60;
 
 /**
  * Pick whose numbers to see (super admins, private panel): everyone, each
- * agent (when there is more than one) and each member under the login.
+ * agent and each member under the login.
  * `target(tok)` is the button data for a choice; `back` the button data to go
  * back to. ⭐ marks the group's member.
  */
@@ -536,7 +536,7 @@ export async function subjectPicker(cfg, { target, back, title = `📥 ${REPORT_
   const rows = [[btn('👥 ទាំងអស់', target('a'))]];
   let shown = 0;
   for (const a of list) {
-    if (list.length > 1) rows.push([btn(`🧑‍💼 ${a.username}${a.nickname ? ` · ${a.nickname}` : ''}${star(a.userCode)}`, target(a.userCode))]);
+    rows.push([btn(`🧑‍💼 ${a.username}${star(a.userCode)}`, target(a.userCode))]);
     const members = [...a.memberList].sort((x, y) => x.username.localeCompare(y.username));
     for (let i = 0; i < members.length && shown < MAX_PICK; i += 2) {
       rows.push(members.slice(i, i + 2).map((m) => btn(`👤 ${m.username}${star(m.userCode)}`, target(m.userCode))));
