@@ -462,7 +462,7 @@ export function formatReport(group, row, prev = null, who = null) {
   const [y, m, d] = row.day.split('-');
   const doc = new Doc()
     .title(`📋 របាយការណ៍ប្រចាំថ្ងៃ · ${d}/${m}/${y}`)
-    .line(who ? escape(subjectLabel(who)) : `${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)}`)
+    .line(who ? `<b>${escape(subjectLabel(who))}</b>` : `${group.icon ?? '🏪'} ${escape(group.name ?? group.tgId)}`)
     .line('');
   const foot = () => {
     if (row.ranAt) doc.line('').line(`<i>🕘 ទាញយក ${time(row.ranAt, formatTime(row.ranAt), 'r')}</i>`);
