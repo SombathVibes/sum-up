@@ -246,39 +246,48 @@ export async function loginUser(request) {
   return { code: String(p.userCode ?? ''), level: /^[a-z]+$/i.test(role) ? role.toLowerCase() : 'agent', name: String(p.username ?? p.user_name ?? '') };
 }
 
-// ---------------------------------------------------------------- defaults
-// The API URL, Basic value and headers are the same for every login on the
-// platform: a super admin sets them once (settings 'login_defaults') and a new
-// login takes them, so adding one is just a username and password.
+// ---------------------------------------------------------------- platforms
+// 🌐 The lottery platforms logins can be on: each a name, API URL, Basic value
+// and headers, set once by a super admin (settings 'login_defaults'). Adding a
+// login is then picking a platform and typing a username and password.
 const DEFAULTS_KEY = 'login_defaults';
+const MAX_PLATFORMS = 20;
 
-/** { baseUrl, basicAuth, headers }: saved, else the first super admin login's, else empty. */
-export async function loginDefaults() {
+const platformOf = (l, name) => ({ name: name || host(l.baseUrl), baseUrl: l.baseUrl, basicAuth: l.basicAuth ?? '', headers: l.headers ?? '' });
+const host = (url) => { try { return new URL(url).host; } catch { return String(url ?? ''); } };
+
+/** [{ name, baseUrl, basicAuth, headers }]: saved, else one per API URL of the super admins' logins. */
+export async function loginPlatforms() {
   let saved = null;
   try {
     saved = JSON.parse((await getSetting(DEFAULTS_KEY)) ?? 'null');
   } catch {
     // broken: fall back
   }
-  if (saved?.baseUrl) return saved;
-  const first = (await listLogins()).find((l) => !l.ownerId && l.baseUrl);
-  return first
-    ? { baseUrl: first.baseUrl, basicAuth: first.basicAuth, headers: first.headers }
-    : { baseUrl: '', basicAuth: '', headers: 'platformtype: p99l' };
+  if (Array.isArray(saved?.platforms) && saved.platforms.length) return saved.platforms;
+  if (saved?.baseUrl) return [platformOf(saved)]; // one default, as first saved
+  const seen = new Map();
+  for (const l of await listLogins()) if (!l.ownerId && l.baseUrl && !seen.has(l.baseUrl)) seen.set(l.baseUrl, platformOf(l));
+  return [...seen.values()];
 }
 
-/** Checks and saves the defaults: { values } or { error } naming the bad field. */
-export async function saveLoginDefaults(input) {
-  const { values, error } = checkLogin({ ...input, username: 'x', times: ['21:00'] });
-  if (error) return { error };
-  const out = { baseUrl: values.baseUrl, basicAuth: values.basicAuth, headers: values.headers };
-  await setSetting(DEFAULTS_KEY, JSON.stringify(out));
+/** Checks and saves the platforms: { values } or { error, index } naming the bad field. */
+export async function savePlatforms(list) {
+  if (!Array.isArray(list) || list.length > MAX_PLATFORMS) return { error: 'platforms' };
+  const out = [];
+  for (const [index, p] of list.entries()) {
+    const { values, error } = checkLogin({ ...p, username: 'x', times: ['21:00'] });
+    if (error) return { error, index };
+    const name = String(p.name ?? '').trim().slice(0, 40) || host(values.baseUrl);
+    out.push({ name, baseUrl: values.baseUrl, basicAuth: values.basicAuth, headers: values.headers });
+  }
+  await setSetting(DEFAULTS_KEY, JSON.stringify({ platforms: out }));
   return { values: out };
 }
 
-/** A new login's form with the defaults filled in where it left them empty. */
+/** A new login's form with the first platform filled in where it left the API settings empty. */
 export async function withDefaults(input) {
-  const d = await loginDefaults();
+  const d = (await loginPlatforms())[0] ?? { baseUrl: '', basicAuth: '', headers: '' };
   return {
     ...input,
     baseUrl: String(input.baseUrl ?? '').trim() || d.baseUrl,

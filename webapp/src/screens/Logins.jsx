@@ -127,9 +127,11 @@ function TimesPicker({ times, onChange }) {
   );
 }
 
-/** Add or edit one login: username and password; the rest under ⚙️ (the defaults fill it). */
-function LoginForm({ login, defaults, onSaved, onCancel, onDeleted }) {
-  const [form, setForm] = useState(() => ({ ...NEW, ...(login ? {} : { baseUrl: defaults?.baseUrl ?? '', basicAuth: defaults?.basicAuth ?? '', headers: defaults?.headers ?? NEW.headers }), ...login, password: '' }));
+const apiOf = (p) => ({ baseUrl: p?.baseUrl ?? '', basicAuth: p?.basicAuth ?? '', headers: p?.headers ?? NEW.headers });
+
+/** Add or edit one login: 🌐 a platform, username and password; the rest under ⚙️. */
+function LoginForm({ login, platforms = [], onSaved, onCancel, onDeleted }) {
+  const [form, setForm] = useState(() => ({ ...NEW, ...(login ? {} : apiOf(platforms[0])), ...login, password: '' }));
   const [showPw, setShowPw] = useState(false);
   const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(null);
@@ -147,9 +149,21 @@ function LoginForm({ login, defaults, onSaved, onCancel, onDeleted }) {
     setBusy('delete');
     call('loginDelete', { id: login.id }).then((r) => onDeleted(r.logins), (e) => setError(e.message)).finally(() => setBusy(null));
   };
-  const summary = [`⏰ ${form.times.length === 1 ? form.times[0] : `${kh(form.times.length)} ដង/ថ្ងៃ`}`, form.sendReport ? '📤 សាង' : null, form.enabled ? null : '⏸ ផ្អាក', host(form.baseUrl) || '⚠️ គ្មាន API URL'].filter(Boolean).join(' · ');
+  const platform = platforms.find((p) => p.baseUrl === form.baseUrl && (p.basicAuth ?? '') === (form.basicAuth ?? ''));
+  const summary = [`⏰ ${form.times.length === 1 ? form.times[0] : `${kh(form.times.length)} ដង/ថ្ងៃ`}`, form.sendReport ? '📤 សាង' : null, form.enabled ? null : '⏸ ផ្អាក', platform ? null : host(form.baseUrl) || '⚠️ គ្មាន API URL'].filter(Boolean).join(' · ');
   return (
     <div className="login-form">
+      {platforms.length > 0 && (
+        <div className="label">
+          <span className="muted small">🌐 Platform</span>
+          <div className="chips">
+            {platforms.map((p) => (
+              <button key={`${p.name}${p.baseUrl}`} type="button" className={platform === p ? 'chip on' : 'chip'} onClick={() => set(apiOf(p))}>{p.name}</button>
+            ))}
+            {!platform && <span className="chip on static">✏️ {host(form.baseUrl) || 'ផ្សេង'}</span>}
+          </div>
+        </div>
+      )}
       <label className="label">
         <span className="muted small">Username</span>
         <input className="field roomy" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoComplete="off"
@@ -214,27 +228,36 @@ function LoginForm({ login, defaults, onSaved, onCancel, onDeleted }) {
   );
 }
 
-/** 🌐 The API URL, Basic and headers new logins start from (super admins). */
-function DefaultsForm({ defaults, onSaved }) {
-  const [form, setForm] = useState(defaults);
+/** 🌐 The platforms new logins pick from (super admins): name, API URL, Basic, headers. */
+function PlatformsForm({ platforms, onSaved }) {
+  const [list, setList] = useState(platforms.length ? platforms : [{ name: '', baseUrl: '', basicAuth: '', headers: NEW.headers }]);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
-  const set = (patch) => { setForm({ ...form, ...patch }); setNote(null); };
+  const change = (i, patch) => { setList(list.map((p, j) => (j === i ? { ...p, ...patch } : p))); setNote(null); };
   const save = () => {
     setBusy(true);
-    call('loginDefaults', { defaults: form })
-      .then((r) => { onSaved(r.defaults); setNote('✅ បានរក្សាទុក'); })
-      .catch((e) => setNote(`⚠️ ${FIELD_ERRORS[e.parameters?.field] ?? e.message}`))
+    call('loginDefaults', { platforms: list })
+      .then((r) => { setList(r.platforms); onSaved(r.platforms); setNote('✅ បានរក្សាទុក'); })
+      .catch((e) => setNote(`⚠️ ${e.parameters?.index !== undefined ? `#${e.parameters.index + 1} · ` : ''}${FIELD_ERRORS[e.parameters?.field] ?? e.message}`))
       .finally(() => setBusy(false));
   };
   return (
-    <Fold title="🌐 API លំនាំដើម" summary={`${host(defaults.baseUrl) || 'មិនទាន់កំណត់'} · Login ថ្មីប្រើវាដោយស្វ័យប្រវត្តិ`}>
-      <p className="muted small">Login ថ្មី (រួមទាំងរបស់អ្នកគ្រប់គ្រង) ប្រើ API URL, Basic និង Header ទាំងនេះ — គេដាក់តែ Username និង Password។</p>
-      <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="https://example.com/api/v1.0.0" value={form.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
-      <input className="field mono" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="Basic …" value={form.basicAuth} onChange={(e) => set({ basicAuth: e.target.value })} />
-      <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="platformtype: p99l" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
+    <Fold title="🌐 Platform" summary={platforms.length ? platforms.map((p) => p.name).join(' · ') : 'មិនទាន់កំណត់'}>
+      <p className="muted small">Login ថ្មីជ្រើស Platform មួយ ហើយដាក់តែ Username និង Password។</p>
+      {list.map((p, i) => (
+        <div key={i} className="login-form">
+          <div className="row">
+            <input className="field grow" placeholder="ឈ្មោះ (ឧ. VN1)" value={p.name} onChange={(e) => change(i, { name: e.target.value })} />
+            <button className="icon small" onClick={() => { setList(list.filter((_, j) => j !== i)); setNote(null); }} aria-label="Remove">🗑</button>
+          </div>
+          <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="https://example.com/api/v1.0.0" value={p.baseUrl} onChange={(e) => change(i, { baseUrl: e.target.value })} />
+          <input className="field mono" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="Basic … (ស្រេចចិត្ត)" value={p.basicAuth} onChange={(e) => change(i, { basicAuth: e.target.value })} />
+          <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="platformtype: p99l" value={p.headers} onChange={(e) => change(i, { headers: e.target.value })} />
+        </div>
+      ))}
       <div className="row">
-        {note && <span className="small grow">{note}</span>}
+        <button className="icon small" onClick={() => setList([...list, { name: '', baseUrl: '', basicAuth: '', headers: NEW.headers }])}>➕ Platform</button>
+        <span className="small grow">{note}</span>
         <button className="btn small" disabled={busy} onClick={save}>{busy ? '…' : '💾 រក្សាទុក'}</button>
       </div>
     </Fold>
@@ -338,15 +361,15 @@ function LinkGroups({ login, onClose, onChanged }) {
 
 export default function Logins({ standalone = false }) {
   const [logins, setLogins] = useState(null);
-  const [defaults, setDefaults] = useState(null);
-  const [canEditDefaults, setCanEditDefaults] = useState(false);
+  const [platforms, setPlatforms] = useState([]);
+  const [canEditPlatforms, setCanEditPlatforms] = useState(false);
   const [editing, setEditing] = useState(null); // null | 'new' | id
   const [linking, setLinking] = useState(null); // login id
   const [busy, setBusy] = useState(null); // `${action} ${id}`
   const [notes, setNotes] = useState({}); // id → text
   const [error, setError] = useState(null);
   useEffect(() => {
-    call('logins').then((r) => { setLogins(r.logins); setDefaults(r.defaults); setCanEditDefaults(!!r.canEditDefaults); }, setError);
+    call('logins').then((r) => { setLogins(r.logins); setPlatforms(r.platforms ?? []); setCanEditPlatforms(!!r.canEditPlatforms); }, setError);
   }, []);
 
   const note = (id, text) => setNotes((n) => ({ ...n, [id]: text }));
@@ -386,7 +409,7 @@ export default function Logins({ standalone = false }) {
         </div>
       )}
       {logins.map((l) => (editing === l.id ? (
-        <LoginForm key={l.id} login={l} defaults={defaults} onCancel={() => setEditing(null)}
+        <LoginForm key={l.id} login={l} platforms={platforms} onCancel={() => setEditing(null)}
           onSaved={saved} onDeleted={(list) => { setLogins(list); setEditing(null); }} />
       ) : (
         <div key={l.id} className="login-item">
@@ -412,11 +435,11 @@ export default function Logins({ standalone = false }) {
         </div>
       )))}
       {editing === 'new' ? (
-        <LoginForm defaults={defaults} onCancel={() => setEditing(null)} onSaved={saved} onDeleted={() => {}} />
+        <LoginForm platforms={platforms} onCancel={() => setEditing(null)} onSaved={saved} onDeleted={() => {}} />
       ) : (
         <button className="btn" onClick={() => setEditing('new')}>➕ បន្ថែម Login</button>
       )}
-      {canEditDefaults && defaults && <DefaultsForm defaults={defaults} onSaved={setDefaults} />}
+      {canEditPlatforms && <PlatformsForm platforms={platforms} onSaved={setPlatforms} />}
     </>
   );
   // A manager's 🔑 tab is this screen alone: open, not folded.
