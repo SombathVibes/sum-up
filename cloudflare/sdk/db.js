@@ -152,7 +152,7 @@ export const dbStats = { n: 0, ms: 0 };
 // write through this Worker instance empties it; a change made by another
 // instance shows within CACHE_MS. Payments, reports and saved days aren't cached.
 const CACHED = new Set(['groups', 'subscriptions', 'admins', 'admin_groups', 'lottery_logins', 'group_lottery_settings', 'agents']);
-const CACHE_MS = 5000;
+const CACHE_MS = 10000;
 const cache = new Map(); // mode + sql + params → { at, rows: Promise }
 
 /** Empties the read cache (every write does). */
