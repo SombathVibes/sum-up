@@ -19,7 +19,7 @@ import { agentDailyTotals, agents } from '../schema.js';
 import { addDays, dayKey, now, parseDayKey, startOf, today } from './dates.js';
 import { groupsOfLogin } from './daily.js';
 import { listLogins, openSession } from './logins.js';
-import { getSetting } from './store.js';
+import { getSetting, setSetting } from './store.js';
 import { Book, getNum, hasValue, put, putFormulaIfEmpty, serial } from './xlsx.js';
 
 /** Day-tab row → lotteryType in the API (MHSB = LEAP, MC = VN1, MT = VN2, TC = TN). */
@@ -560,6 +560,23 @@ export function monthScreen(agent) {
  * workbook to chatId (the tapper's private chat; isPrivate: tapped there). Returns the screen to show afterwards (progress when
  * days are still missing, so the user taps again).
  */
+// The template's bytes by file_id, kept after the first download (getFile and
+// the download are two Telegram round trips); /settemplate gives a new file_id.
+const templates = new Map();
+async function templateBytes(api, fileId) {
+  if (!templates.has(fileId)) {
+    templates.clear();
+    templates.set(fileId, await api.getFileContent(fileId));
+  }
+  return templates.get(fileId).slice(); // a copy: the workbook is built from it
+}
+
+/** A short fingerprint of everything that goes into one agent's month workbook. */
+async function workbookSig(parts) {
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(parts)));
+  return [...new Uint8Array(hash)].slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export async function sendAgentExcel(login, agent, month, chatId, api, InputFile, isPrivate = true) {
   const back = { inline_keyboard: [[btn('🔄 ម្ដងទៀត', `XLM_${agent.id}_${month}`)], [btn('⬅️ ត្រឡប់ក្រោយ', `XLA_${agent.id}`)]] };
   const fileId = await templateFileId();
@@ -569,11 +586,32 @@ export async function sendAgentExcel(login, agent, month, chatId, api, InputFile
     const why = r.error ? `\n⚠️ ${r.error.slice(0, 200)}` : '';
     return { text: `⏳ បានទាញ ${r.total - r.missing}/${r.total} ថ្ងៃ — ចុច «🔄 ម្ដងទៀត» ដើម្បីបន្ត។${why}`, reply_markup: back };
   }
-  const bytes = await buildWorkbook(await api.getFileContent(fileId), agent, month, r.days, r.members);
-  await api.sendDocument({
+  const caption = `📊 ${agent.username} · ${monthLabel(month)}${r.total ? ` · ទិន្នន័យដល់ថ្ងៃ ${[...r.days.keys()].sort().at(-1).split('-').reverse().join('/')}` : ' · មិនទាន់មានថ្ងៃចប់'}`;
+  // The same month with the same data (and template) as last time: Telegram
+  // sends the file it already has, with no rebuild and no upload.
+  const sentKey = `xlsx:${agent.id}:${month}`;
+  const sig = await workbookSig([fileId, agent.username, agent.nickname ?? '', month, [...r.days.entries()].sort(([a], [b]) => a.localeCompare(b)), r.members, caption]);
+  let sent = null;
+  try {
+    sent = JSON.parse((await getSetting(sentKey)) ?? 'null');
+  } catch {
+    // broken: build it again
+  }
+  if (sent?.sig === sig) {
+    try {
+      await api.sendDocument({ chat_id: chatId, document: sent.fileId, caption });
+      return { text: `✅ បានផ្ញើ Excel ${agent.username} · ${monthLabel(month)}${isPrivate ? '' : ' ទៅ chat ផ្ទាល់របស់អ្នក'}`, reply_markup: back };
+    } catch (e) {
+      if (e?.code === 403) throw e; // the user hasn't started the bot: the caller says so
+      console.warn('saved Excel refused, building it again:', e?.message ?? e);
+    }
+  }
+  const bytes = await buildWorkbook(await templateBytes(api, fileId), agent, month, r.days, r.members);
+  const message = await api.sendDocument({
     chat_id: chatId,
     document: new InputFile(bytes, `${agent.username}-${month}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
-    caption: `📊 ${agent.username} · ${monthLabel(month)}${r.total ? ` · ទិន្នន័យដល់ថ្ងៃ ${[...r.days.keys()].sort().at(-1).split('-').reverse().join('/')}` : ' · មិនទាន់មានថ្ងៃចប់'}`,
+    caption,
   });
+  if (message?.document?.file_id) await setSetting(sentKey, JSON.stringify({ sig, fileId: message.document.file_id }));
   return { text: `✅ បានផ្ញើ Excel ${agent.username} · ${monthLabel(month)}${isPrivate ? '' : ' ទៅ chat ផ្ទាល់របស់អ្នក'}`, reply_markup: back };
 }
