@@ -27,8 +27,12 @@ const pick = (t) => ({ bet: t.commissionKhr, reward: t.rewardAmountKhr, wl: t.wi
  * screen); or `{ id }` with `saved: true`, saved days only (the group list).
  */
 export async function lotteryRange(login, who, days, { saved = false } = {}) {
-  const cur = saved ? await savedSubjectTotals(login.id, who, days) : await subjectTotals(login, who, days);
   const todayKey = dayKey(today());
+  // Today is never fetched: its total report stays empty until the day settles,
+  // and the saved by-draw report stands in for it (below). Fetching it anyway
+  // cost the Mini App's lottery card ~1.4 s of lottery API calls per open.
+  const past = days.filter((d) => d !== todayKey);
+  const cur = saved ? await savedSubjectTotals(login.id, who, days) : await subjectTotals(login, who, past);
   const row = days.includes(todayKey) ? await reportForDay(login.id, todayKey, who.key) : null;
   const side = (field, send) => {
     const total = pick(cur[field]);

@@ -145,7 +145,10 @@ async function membersOf(json, agent, { refresh = false } = {}) {
 
 /** Is a saved agent_daily_totals row still good? Today's: for TODAY_FRESH_S; past days: once fetched after they ended. */
 function isCurrent(row, day, todayKey) {
-  if (day === todayKey) return now() - row.fetchedAt < TODAY_FRESH_S;
+  // Not final yet (today, or yesterday in its first hour): reused for a few
+  // minutes, rather than fetched again on every open.
+  if (now() - row.fetchedAt < TODAY_FRESH_S) return true;
+  if (day === todayKey) return false;
   return row.fetchedAt === 0 || row.fetchedAt >= startOf(addDays(parseDayKey(day), 1)) + FINAL_AFTER_S;
 }
 

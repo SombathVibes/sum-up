@@ -7,11 +7,12 @@ import { bindDb, dbStats } from './db.js';
 
 export { db } from './db.js';
 
-/** Per update: Bot API calls and D1 queries (count, ms), for the Worker's log line. */
+/** Per update: Bot API calls, D1 queries and other fetches (count, ms), for the Worker's log line. */
 export const apiStats = { n: 0, ms: 0 };
+const fetchStats = { n: 0, ms: 0 };
 export function takeStats() {
-  const out = { api: { ...apiStats }, db: { ...dbStats } };
-  apiStats.n = 0; apiStats.ms = 0; dbStats.n = 0; dbStats.ms = 0;
+  const out = { api: { ...apiStats }, db: { ...dbStats }, fetch: { ...fetchStats } };
+  for (const s of [apiStats, dbStats, fetchStats]) { s.n = 0; s.ms = 0; }
   return out;
 }
 
@@ -86,7 +87,15 @@ export const api = new Proxy({}, {
   get: (_, method) => (method === 'getFileContent' ? getFileContent : (params) => callApi(method, params)),
 });
 
-const fetchWithHelpers = (...args) => globalThis.fetch(...args);
+const fetchWithHelpers = async (...args) => {
+  const started = Date.now();
+  try {
+    return await globalThis.fetch(...args);
+  } finally {
+    fetchStats.n += 1;
+    fetchStats.ms += Date.now() - started;
+  }
+};
 export { fetchWithHelpers as fetch };
 
 export class EndpointError extends Error {

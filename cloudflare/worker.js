@@ -93,7 +93,12 @@ async function api(name, request, env) {
     return json(400, { ok: false, error_type: 'BAD_REQUEST', description: 'Body must be JSON' });
   }
   try {
-    return json(200, { ok: true, result: await fn(input, { initData }) });
+    const started = Date.now();
+    takeStats();
+    const result = await fn(input, { initData });
+    const { db: d, fetch: f } = takeStats();
+    console.log(`✓ api/${name} (${Date.now() - started} ms · D1 ${d.n}× ${d.ms} ms · fetch ${f.n}× ${f.ms} ms)`);
+    return json(200, { ok: true, result });
   } catch (e) {
     if (e instanceof EndpointError) return json(400, { ok: false, error_type: 'ENDPOINT_ERROR', description: e.message, parameters: e.parameters ?? {} });
     console.error(`✗ api/${name}`, e?.stack ?? e);
