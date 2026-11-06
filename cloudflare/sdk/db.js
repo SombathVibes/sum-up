@@ -143,13 +143,22 @@ export const bindDb = (database) => { d1 = database; };
 // D1 takes null, not undefined.
 const params = (q) => q.params.map((v) => (v === undefined ? null : v));
 
+/** How many queries ran and how long they took (the Worker logs it per update). */
+export const dbStats = { n: 0, ms: 0 };
+
 const exec = async (q, mode) => {
   if (!d1) throw new Error('sdk/db: no D1 binding (bindDb not called)');
-  const stmt = d1.prepare(q.text).bind(...params(q));
-  if (mode === 'all') return (await stmt.all()).results ?? [];
-  if (mode === 'get') return (await stmt.first()) ?? undefined;
-  const r = await stmt.run();
-  return { rowsAffected: Number(r.meta?.changes ?? 0), lastInsertRowid: Number(r.meta?.last_row_id ?? 0), rows: [] };
+  const started = Date.now();
+  try {
+    const stmt = d1.prepare(q.text).bind(...params(q));
+    if (mode === 'all') return (await stmt.all()).results ?? [];
+    if (mode === 'get') return (await stmt.first()) ?? undefined;
+    const r = await stmt.run();
+    return { rowsAffected: Number(r.meta?.changes ?? 0), lastInsertRowid: Number(r.meta?.last_row_id ?? 0), rows: [] };
+  } finally {
+    dbStats.n += 1;
+    dbStats.ms += Date.now() - started;
+  }
 };
 
 class Select {

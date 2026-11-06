@@ -16,7 +16,7 @@
     "webapp": "npm --prefix webapp run dev",
     "cf:gen": "node --no-warnings cloudflare/gen.mjs",
     "cf:export": "node --no-warnings cloudflare/export-local.mjs",
-    "cf:dev": "npm run cf:gen && npm run build && wrangler d1 migrations apply sumup --local && wrangler dev",
-    "cf:deploy": "npm run cf:gen && npm run build && wrangler d1 migrations apply sumup --remote && wrangler deploy"
+    "cf:dev": "npm run cf:gen && npm run build && wrangler d1 migrations apply sumup-eu --local && wrangler dev",
+    "cf:deploy": "npm run cf:gen && npm run build && wrangler d1 migrations apply sumup-eu --remote && wrangler deploy"
   }
 }

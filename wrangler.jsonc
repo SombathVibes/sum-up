@@ -23,12 +23,18 @@
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "sumup",
-      // From `npx wrangler d1 create sumup`.
-      "database_id": "f17aa36a-e217-45a3-b87d-4b2fe8582fce",
+      // In Western Europe (`npx wrangler d1 create sumup-eu --location weur`): next to
+      // Telegram's servers, where the webhook runs. (The first one, `sumup`, was in
+      // Asia-Pacific: every query crossed Europe↔Asia, ~180 ms each.)
+      "database_name": "sumup-eu",
+      "database_id": "a82412f1-461f-4439-9b80-7c3af144d932",
       "migrations_dir": "cloudflare/migrations"
     }
   ],
+  // Runs the Worker next to what it talks to most (D1, Telegram) rather than next
+  // to whoever made the request: the Mini App from Asia then makes one long trip
+  // per request instead of one per query.
+  "placement": { "mode": "smart" },
   // Every minute: the lottery logins' schedule and yesterday's agent days.
   "triggers": { "crons": ["* * * * *"] },
   "observability": { "enabled": true }

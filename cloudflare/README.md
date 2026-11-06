@@ -24,8 +24,9 @@ You run these; they use your Cloudflare account and the bot's token.
 2. **Plan:** Workers Paid ($5/month) is recommended — the free plan allows
    10 ms of CPU per request, and building an agent Excel or a month of report
    pages needs more. D1 fits in the free tier.
-3. **Database:** `npx wrangler d1 create sumup`, and put the `database_id` it
-   prints into `wrangler.jsonc` (`REPLACE_WITH_D1_ID`).
+3. **Database:** `npx wrangler d1 create sumup-eu --location weur` (Western
+   Europe, next to Telegram's servers — much faster than Asia-Pacific), and put
+   the `database_id` it prints into `wrangler.jsonc`.
 4. **Secrets** (typed into the prompt, never into a file):
    - `npx wrangler secret put BOT_TOKEN` — the token from @BotFather.
    - `npx wrangler secret put WEBHOOK_SECRET` — any long random string (letters,
@@ -37,7 +38,7 @@ You run these; they use your Cloudflare account and the bot's token.
 6. **Deploy:** `npm run cf:deploy` — generates, builds the Mini App, applies the
    D1 migrations, deploys.
 7. **Data (optional):** `npm run cf:export`, then
-   `npx wrangler d1 execute sumup --remote --file cloudflare/data.local.sql`
+   `npx wrangler d1 execute sumup-eu --remote --file cloudflare/data.local.sql`
    copies your local groups, subscriptions, payments, logins and settings in.
    The file holds the lottery logins' passwords; it's git-ignored — delete it
    afterwards.
@@ -66,4 +67,4 @@ You run these; they use your Cloudflare account and the bot's token.
 ## Back to Telegram Serverless
 
 Deploy `main` with `npm run deploy` (it sets its own webhook), and export the
-data from D1 if you need it (`npx wrangler d1 export sumup --remote --output …`).
+data from D1 if you need it (`npx wrangler d1 export sumup-eu --remote --output …`).

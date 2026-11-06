@@ -21,7 +21,7 @@
 //
 // Secrets: BOT_TOKEN and WEBHOOK_SECRET (wrangler secret put …). D1: DB.
 
-import { bindEnv, callApi, EndpointError } from 'sdk';
+import { bindEnv, callApi, EndpointError, takeStats } from 'sdk';
 import { endpoints, handlers } from './generated.js';
 import { collectYesterday } from '../tgcloud/lib/agents.js';
 import { listLogins } from '../tgcloud/lib/logins.js';
@@ -64,14 +64,17 @@ async function verifyInitData(raw, botToken) {
 }
 
 /** One webhook update, as dev/run.js handles a polled one. */
-async function dispatch(update) {
+async function dispatch(update, colo) {
   const type = Object.keys(update).find((k) => k !== 'update_id');
   const handler = handlers[type];
   if (!handler) return;
   const started = Date.now();
+  takeStats();
   try {
     await handler(update[type], { update });
-    console.log(`✓ ${type} ${update[type]?.text ?? update[type]?.data ?? ''} (${Date.now() - started} ms)`);
+    // Where the time went: Telegram calls and D1 queries (count · ms), and the Cloudflare location.
+    const { api: a, db: d } = takeStats();
+    console.log(`✓ ${type} ${update[type]?.text ?? update[type]?.data ?? ''} (${Date.now() - started} ms · Telegram ${a.n}× ${a.ms} ms · D1 ${d.n}× ${d.ms} ms · ${colo ?? '?'})`);
   } catch (e) {
     console.error(`✗ ${type}`, e?.stack ?? e);
   }
@@ -106,7 +109,7 @@ export default {
       if (!same(request.headers.get('X-Telegram-Bot-Api-Secret-Token'), env.WEBHOOK_SECRET)) return new Response('forbidden', { status: 403 });
       const update = await request.json().catch(() => null);
       // Answered at once, so Telegram doesn't retry; the work goes on in the background.
-      if (update) ctx.waitUntil(dispatch(update));
+      if (update) ctx.waitUntil(dispatch(update, request.cf?.colo));
       return new Response('ok');
     }
     if (request.method === 'POST' && url.pathname.startsWith('/api/')) return api(url.pathname.slice(5), request, env);

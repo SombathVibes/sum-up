@@ -3,9 +3,17 @@
 // surface as dev/sdk/index.js; bindEnv(env) is called by the Worker before
 // each request (the token and D1 come from the Worker's env, not process.env).
 
-import { bindDb } from './db.js';
+import { bindDb, dbStats } from './db.js';
 
 export { db } from './db.js';
+
+/** Per update: Bot API calls and D1 queries (count, ms), for the Worker's log line. */
+export const apiStats = { n: 0, ms: 0 };
+export function takeStats() {
+  const out = { api: { ...apiStats }, db: { ...dbStats } };
+  apiStats.n = 0; apiStats.ms = 0; dbStats.n = 0; dbStats.ms = 0;
+  return out;
+}
 
 let botToken = '';
 let apiBase = 'https://api.telegram.org';
@@ -14,7 +22,11 @@ let apiBase = 'https://api.telegram.org';
 export function bindEnv(env) {
   botToken = env.BOT_TOKEN ?? '';
   apiBase = env.TELEGRAM_API || 'https://api.telegram.org';
-  bindDb(env.DB);
+  // A D1 session per request: with read replication on, its reads go to the
+  // nearest copy (the webhook runs near Telegram, in Europe; the Mini App near
+  // its users) and writes to the primary, in order within the request. With
+  // replication off it is the primary, as before.
+  bindDb(env.DB?.withSession ? env.DB.withSession('first-unconstrained') : env.DB);
 }
 
 export class BotApiError extends Error {
@@ -52,8 +64,11 @@ export async function callApi(method, params = {}) {
   } else {
     init = { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(params) };
   }
+  const started = Date.now();
   const res = await fetch(`${apiBase}/bot${botToken}/${method}`, init);
   const body = await res.json();
+  apiStats.n += 1;
+  apiStats.ms += Date.now() - started;
   if (!body.ok) throw new BotApiError(method, body);
   return body.result;
 }
