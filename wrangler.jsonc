@@ -31,10 +31,11 @@
       "migrations_dir": "cloudflare/migrations"
     }
   ],
-  // Runs the Worker next to what it talks to most (D1, Telegram) rather than next
-  // to whoever made the request: the Mini App from Asia then makes one long trip
-  // per request instead of one per query.
-  "placement": { "mode": "smart" },
+  // Always runs the Worker in Amsterdam (Azure West Europe), next to D1 and to
+  // Telegram's servers, rather than next to whoever made the request: the Mini
+  // App from Asia then makes one long trip per request instead of one per query
+  // (in Phnom Penh, a group list took 8 s). Smart Placement never moved it.
+  "placement": { "region": "azure:westeurope" },
   // Every minute: the lottery logins' schedule and yesterday's agent days.
   "triggers": { "crons": ["* * * * *"] },
   "observability": { "enabled": true }
