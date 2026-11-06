@@ -3,6 +3,7 @@
 // surface as dev/sdk/index.js; bindEnv(env) is called by the Worker before
 // each request (the token and D1 come from the Worker's env, not process.env).
 
+import puppeteer from '@cloudflare/puppeteer';
 import { bindDb, dbStats } from './db.js';
 
 export { db } from './db.js';
@@ -126,10 +127,56 @@ export async function renderImage(html, { width = 1200, selector } = {}) {
     });
     if (res.ok) return new Uint8Array(await res.arrayBuffer());
     const text = await res.text().catch(() => '');
-    if (res.status === 429 && attempt < 2) {
-      await new Promise((r) => setTimeout(r, 5000));
+    if (res.status === 429 && attempt < 3) {
+      await new Promise((r) => setTimeout(r, 4000));
       continue;
     }
     throw new Error(`screenshot: HTTP ${res.status} ${text.slice(0, 200)}`);
+  }
+}
+
+/** A Browser Rendering session: an idle one still open (kept 30 s), else a new one. */
+async function openBrowser() {
+  try {
+    const idle = (await puppeteer.sessions(browser)).find((x) => !x.connectionId);
+    if (idle) return await puppeteer.connect(browser, idle.sessionId);
+  } catch (e) {
+    console.warn('browser session reuse failed:', e?.message ?? e);
+  }
+  return puppeteer.launch(browser, { keep_alive: 30000 });
+}
+
+/**
+ * PNGs of several pages ([{ html, width }], each capturing #sheet) in one
+ * browser session: no wait between them (the screenshot action takes one
+ * every 10 s on the free plan). The session stays open 30 s for the next
+ * tap. If no browser can be had, they're taken one by one with renderImage.
+ */
+export async function renderImages(pages) {
+  if (!pages.length) return [];
+  if (!browser) throw new Error('Image rendering isn’t set up (the BROWSER binding in wrangler.jsonc).');
+  let b;
+  try {
+    b = await openBrowser();
+  } catch (e) {
+    console.warn('no browser session, using the screenshot action:', e?.message ?? e);
+    const out = [];
+    for (const p of pages) out.push(await renderImage(p.html, { width: p.width, selector: '#sheet' }));
+    return out;
+  }
+  try {
+    const page = await b.newPage();
+    const out = [];
+    for (const p of pages) {
+      await page.setViewport({ width: p.width, height: 900, deviceScaleFactor: 2 });
+      await page.setContent(p.html, { waitUntil: 'load' });
+      await page.evaluate(() => document.fonts.ready);
+      const el = await page.$('#sheet');
+      out.push(new Uint8Array(await el.screenshot({ type: 'png' })));
+    }
+    await page.close().catch(() => {});
+    return out;
+  } finally {
+    b.disconnect();
   }
 }

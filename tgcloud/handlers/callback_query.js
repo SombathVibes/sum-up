@@ -1,7 +1,7 @@
 // Button presses from the /menu and /sync keyboards, in groups and in a bot
 // admin's private-chat panel.
 
-import { api, BotApiError, InputFile, renderImage } from 'sdk';
+import { api, BotApiError, InputFile, renderImages } from 'sdk';
 
 // Telegram rejects answers to taps it considers too old (e.g. made while the
 // bot was restarting); the tap's work still goes ahead.
@@ -18,6 +18,24 @@ const answer = (params) => {
   return undefined;
 };
 
+/** The album's photo message ids above a 🖼 keyboard message, or null. */
+async function albumOf(chatId, messageId) {
+  try {
+    const ids = JSON.parse((await getSetting(`album:${chatId}:${messageId}`)) ?? 'null');
+    return Array.isArray(ids) && ids.length ? ids : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Leaving the 🖼 screen: its album is deleted. */
+async function dropAlbum(chatId, messageId) {
+  const ids = await albumOf(chatId, messageId);
+  if (!ids) return;
+  await Promise.all(ids.map((id) => deleteQuietly(chatId, id)));
+  await setSetting(`album:${chatId}:${messageId}`, '[]');
+}
+
 export default async function (query) {
   try {
     return await handle(query);
@@ -31,7 +49,7 @@ import {
 } from '../lib/dates.js';
 import { dayReport, dayTable, money, rangeReport } from '../lib/report.js';
 import {
-  getGroup, hasActiveSubscription, latestSubscription, recentPayments, renewSubscription, setLifetime,
+  getGroup, getSetting, hasActiveSubscription, latestSubscription, recentPayments, renewSubscription, setLifetime, setSetting,
   subscriptionHistory,
   totalsByBot, totalsByDay, upsertGroup,
 } from '../lib/store.js';
@@ -41,7 +59,7 @@ import { accessStatus, offerLabel, priceFor, priceLabel, subscriptionScreen } fr
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject, typePicker } from '../lib/daily.js';
 import { getLogin, listLogins } from '../lib/logins.js';
-import { agentChoiceScreen, agentDayImage, agentListScreen, getAgent, imageDays, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
+import { agentChoiceScreen, agentDayImages, agentListScreen, getAgent, imageDays, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
 import { imageDayPicker, imageKeyboard } from '../lib/sheetimage.js';
 import { totalsPicker, totalsScreen } from '../lib/totals.js';
 import { paymentSettings } from '../lib/settings.js';
@@ -303,6 +321,7 @@ async function handle(query) {
       const [, kind, id, month, day] = /^XL([AMXID])_(\d+)(?:_(\d{4}-\d\d)(?:-(\d\d))?)?$/.exec(key) ?? [];
       const agent = id && (await getAgent(Number(id)));
       if (!agent || agent.loginId !== login.id) return showScreen(await agentListScreen(login));
+      if (kind === 'A' || kind === 'X') await dropAlbum(chatId, messageId);
       if (kind === 'A') return showScreen(agentChoiceScreen(agent));
       if (kind === 'X' || (kind === 'M' && !month)) return showScreen(monthScreen(agent));
       // 🖼 a day as the Excel's day tab (today unless one is picked); 📅 XLD_ picks the day.
@@ -311,37 +330,46 @@ async function handle(query) {
       if (kind === 'I') {
         let wanted = month && day ? `${month}-${day}` : span.today;
         if (wanted < span.first || wanted > span.today) wanted = span.today;
-        const markup = scope(imageKeyboard(agent.id, wanted, span));
-        // The ⏳ goes where the old screen was: a caption on a photo, else the text.
+        const keyboard = imageKeyboard(agent.id, wanted, span);
+        // The two pictures go as an album, with this keyboard message under it
+        // (an album can't carry buttons); album:<chat>:<message> names its photos.
+        const album = msg.photo ? null : await albumOf(chatId, messageId);
         if (msg.photo) await api.editMessageCaption({ chat_id: chatId, message_id: messageId, caption: '⏳ កំពុងរៀបចំរូបភាព…' }).catch(() => {});
         else await show('⏳ កំពុងរៀបចំរូបភាព…');
         try {
-          const img = await agentDayImage(login, agent, wanted, renderImage, { refresh });
-          if (img.text) return show(img.text, { reply_markup: imageKeyboard(agent.id, wanted, span) });
-          const photo = img.fileId ?? new InputFile(img.bytes, `${agent.username}-${wanted}.png`, { type: 'image/png' });
-          let sent;
-          if (msg.photo) {
-            // The same message turns into the other day: no new message per tap.
-            sent = await api.editMessageMedia({
-              chat_id: chatId,
-              message_id: messageId,
-              media: { type: 'photo', media: img.fileId ?? 'attach://image', caption: img.caption },
-              ...(img.fileId ? {} : { image: photo }),
-              reply_markup: markup,
-            });
-          } else {
-            await deleteQuietly(chatId, messageId);
-            sent = await api.sendPhoto({ chat_id: chatId, photo, caption: img.caption, reply_markup: markup });
+          const img = await agentDayImages(login, agent, wanted, renderImages, { refresh });
+          if (img.text) {
+            if (msg.photo) await deleteQuietly(chatId, messageId);
+            return msg.photo ? sendScreen(chatId, { text: img.text, reply_markup: scope(keyboard) }) : show(img.text, { reply_markup: keyboard });
           }
-          const fileId = sent?.photo?.at(-1)?.file_id;
-          if (!img.fileId && fileId) await img.remember(fileId);
+          const media = img.images.map((im, i) => ({ type: 'photo', media: im.fileId ?? `attach://p${i}` }));
+          const files = Object.fromEntries(img.images.map((im, i) => [`p${i}`, im.fileId ? undefined : new InputFile(im.bytes, `${agent.username}-${wanted}-${i + 1}.png`, { type: 'image/png' })]));
+          let ids = null;
+          if (album) {
+            // Day changed under an album: both photos change in place.
+            try {
+              const sent = await Promise.all(album.map((id, i) => api.editMessageMedia({ chat_id: chatId, message_id: id, media: media[i], ...(files[`p${i}`] ? { [`p${i}`]: files[`p${i}`] } : {}) })
+                .catch((e) => { if (e instanceof BotApiError && e.description?.includes('not modified')) return null; throw e; })));
+              await Promise.all(sent.map((m, i) => m?.photo && !img.images[i].fileId && img.images[i].remember(m.photo.at(-1).file_id)));
+              ids = album;
+            } catch (e) {
+              console.warn('album edit failed, sending it again:', e?.message ?? e);
+              await Promise.all(album.map((id) => deleteQuietly(chatId, id)));
+            }
+          }
+          if (ids) return show(img.caption, { reply_markup: keyboard });
+          // A new album, then the keyboard under it (this message goes).
+          const sent = await api.sendMediaGroup({ chat_id: chatId, media, ...files });
+          await Promise.all(sent.map((m, i) => !img.images[i].fileId && m.photo && img.images[i].remember(m.photo.at(-1).file_id)));
+          await deleteQuietly(chatId, messageId);
+          const under = await api.sendMessage({ chat_id: chatId, text: img.caption, reply_markup: scope(keyboard) });
+          await setSetting(`album:${chatId}:${under.message_id}`, JSON.stringify(sent.map((m) => m.message_id)));
           return undefined;
         } catch (e) {
-          if (e instanceof BotApiError && e.description?.includes('message is not modified')) return undefined;
           console.error('agent image failed', e);
           const text = `⚠️ ${String(e.message ?? e).slice(0, 300)}`;
-          if (msg.photo) return api.editMessageCaption({ chat_id: chatId, message_id: messageId, caption: text, reply_markup: markup }).catch(() => {});
-          return show(text, { reply_markup: imageKeyboard(agent.id, wanted, span) });
+          if (msg.photo) return api.editMessageCaption({ chat_id: chatId, message_id: messageId, caption: text, reply_markup: scope(keyboard) }).catch(() => {});
+          return show(text, { reply_markup: keyboard });
         }
       }
       await show(`⏳ កំពុងរៀបចំ Excel ${agent.username} · ${month}…`);

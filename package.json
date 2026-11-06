@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "devDependencies": {
+    "@cloudflare/puppeteer": "^1.4.0",
     "@tgcloud/cli": "^0.2.0",
     "wrangler": "^4.156.2"
   },

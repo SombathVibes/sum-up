@@ -72,3 +72,7 @@ export class EndpointError extends Error {
 export async function renderImage() {
   throw new Error('Images are made on Cloudflare only (Browser Rendering).');
 }
+
+export async function renderImages() {
+  throw new Error('Images are made on Cloudflare only (Browser Rendering).');
+}

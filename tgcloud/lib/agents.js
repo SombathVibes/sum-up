@@ -20,7 +20,7 @@ import { addDays, dayKey, now, parseDayKey, startOf, today } from './dates.js';
 import { groupsOfLogin } from './daily.js';
 import { listLogins, openSession } from './logins.js';
 import { getSetting, setSetting } from './store.js';
-import { sheetHtml, sheetValues } from './sheetimage.js';
+import { memberHtml, memberValues, sheetHtml, sheetValues } from './sheetimage.js';
 import { Book, getNum, hasValue, put, putFormulaIfEmpty, serial } from './xlsx.js';
 
 /** Day-tab row → lotteryType in the API (MHSB = LEAP, MC = VN1, MT = VN2, TC = TN). */
@@ -561,30 +561,43 @@ export function imageDays() {
 }
 
 /**
- * 🖼 one agent's day as the template's day tab: { bytes } (a new PNG; save
- * its Telegram file_id with `remember`) or { fileId } (the same image as
- * last time), with `caption`; or { text } while days are still being fetched.
- * `refresh`: today is fetched again.
+ * 🖼 one agent's day as two pictures: the template's day tab and its member
+ * report (M_report). { caption, images: [{ fileId } | { bytes }, …] } (each
+ * with `remember(fileId)` to keep a new one's Telegram file_id), or { text }
+ * while days are still being fetched. A picture whose numbers haven't changed
+ * is sent again from Telegram (no screenshot). `refresh`: today is fetched again.
  */
-export async function agentDayImage(login, agent, day, renderImage, { refresh = false } = {}) {
+export async function agentDayImages(login, agent, day, renderImages, { refresh = false } = {}) {
   const r = await collectDays(login, agent, monthDays(day.slice(0, 7)).filter((d) => d <= day), { refresh });
   if (r.missing) {
     const why = r.error ? `\n⚠️ ${r.error.slice(0, 200)}` : '';
     return { text: `⏳ បានទាញ ${r.total - r.missing}/${r.total} ថ្ងៃ — ចុច «🔄 ទាញថ្មី» ដើម្បីបន្ត។${why}` };
   }
-  const values = sheetValues(agent, day, r.days);
   const caption = `🖼 ${agent.username} · ${day.split('-').reverse().join('/')}`;
-  const key = `img:${agent.id}:${day}`;
-  const sig = await workbookSig(['v1', values]);
-  let saved = null;
-  try {
-    saved = JSON.parse((await getSetting(key)) ?? 'null');
-  } catch {
-    // broken: draw it again
+  const parts = [
+    { name: 'sheet', values: sheetValues(agent, day, r.days), html: sheetHtml, width: 1180 },
+    { name: 'members', values: memberValues(agent, day, r.days, r.members), html: memberHtml, width: 2000 },
+  ];
+  const images = [];
+  const todo = [];
+  for (const part of parts) {
+    const key = `img:${agent.id}:${day}:${part.name}`;
+    const sig = await workbookSig(['v5', part.values]); // v5: fonts built in
+    let saved = null;
+    try {
+      saved = JSON.parse((await getSetting(key)) ?? 'null');
+    } catch {
+      // broken: draw it again
+    }
+    const remember = (fileId) => setSetting(key, JSON.stringify({ sig, fileId }));
+    const image = saved?.sig === sig && saved.fileId ? { fileId: saved.fileId, remember } : { remember };
+    if (!image.fileId) todo.push({ image, html: part.html(part.values), width: part.width });
+    images.push(image);
   }
-  const remember = (fileId) => setSetting(key, JSON.stringify({ sig, fileId }));
-  if (saved?.sig === sig && saved.fileId) return { fileId: saved.fileId, caption, remember };
-  return { bytes: await renderImage(sheetHtml(values), { width: 1180, selector: '#sheet' }), caption, remember };
+  // The changed ones, drawn together in one browser session.
+  const drawn = await renderImages(todo.map(({ html, width }) => ({ html, width })));
+  todo.forEach((t, i) => { t.image.bytes = drawn[i]; });
+  return { caption, images };
 }
 
 /** XLX_<id>: this month and the two before. */

@@ -6,6 +6,8 @@
   "name": "sumup-bot",
   "main": "cloudflare/worker.js",
   "compatibility_date": "2026-10-01",
+  // @cloudflare/puppeteer (the 🖼 images' browser session) needs Node's APIs.
+  "compatibility_flags": ["nodejs_compat"],
   // The bot code imports Telegram Serverless's `sdk`; here it's cloudflare/sdk.
   "alias": {
     "sdk": "./cloudflare/sdk/index.js",
