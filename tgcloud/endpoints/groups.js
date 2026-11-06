@@ -30,25 +30,25 @@ export default async function (input, ctx) {
   const first = addDays(today(), -29);
   const range = { start: startOf(first), end: dayRange(today()).end };
 
-  const out = [];
-  for (const { group, role } of await visibleGroups(user)) {
-    const status = await accessStatus(group);
+  // Every group at once (each D1 query is a round trip; one after another, the list took ~0.5 s).
+  const out = await Promise.all((await visibleGroups(user)).map(async ({ group, role }) => {
+    const [status, rows, lottery] = await Promise.all([accessStatus(group), totalsByDay(group.id, range), lottery30(group, range)]);
     // Fill all 30 days so the chart has a bar for every day.
     const byDay = new Map();
     for (let i = 0; i < 30; i++) byDay.set(dayKey(addDays(first, i)), { day: dayKey(addDays(first, i)), KHR: 0, USD: 0, ops: 0 });
-    for (const r of await totalsByDay(group.id, range)) {
+    for (const r of rows) {
       const d = byDay.get(r.day);
       if (d && r.currency in d) { d[r.currency] += r.total; d.ops += r.ops; }
     }
-    out.push({
+    return {
       tgId: group.tgId,
       name: group.name ?? String(group.tgId),
       role,
       lifetime: !!group.lifetime,
       status, // { kind, end, daysLeft } | { kind: 'lifetime' } | null (expired)
       last30: [...byDay.values()],
-      lottery: await lottery30(group, range),
-    });
-  }
+      lottery,
+    };
+  }));
   return { groups: out };
 }

@@ -146,8 +146,32 @@ const params = (q) => q.params.map((v) => (v === undefined ? null : v));
 /** How many queries ran and how long they took (the Worker logs it per update). */
 export const dbStats = { n: 0, ms: 0 };
 
+// A short read cache for the small tables every tap and Mini App call reads
+// (who's an admin, the group, its subscription, its lottery settings): each D1
+// query costs ~20 ms, and one tap read the same rows up to three times. Any
+// write through this Worker instance empties it; a change made by another
+// instance shows within CACHE_MS. Payments, reports and saved days aren't cached.
+const CACHED = new Set(['groups', 'subscriptions', 'admins', 'admin_groups', 'lottery_logins', 'group_lottery_settings', 'agents']);
+const CACHE_MS = 5000;
+const cache = new Map(); // mode + sql + params → { at, rows: Promise }
+
+/** Empties the read cache (every write does). */
+export const clearCache = () => cache.clear();
+
+const cachedExec = (table, q, mode) => {
+  if (!CACHED.has(table)) return exec(q, mode);
+  const key = `${mode}\n${q.text}\n${JSON.stringify(q.params)}`;
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_MS) return hit.rows;
+  const rows = exec(q, mode);
+  cache.set(key, { at: Date.now(), rows });
+  rows.catch(() => cache.delete(key));
+  return rows;
+};
+
 const exec = async (q, mode) => {
   if (!d1) throw new Error('sdk/db: no D1 binding (bindDb not called)');
+  if (!/^\s*SELECT\b/i.test(q.text)) cache.clear();
   const started = Date.now();
   try {
     const stmt = d1.prepare(q.text).bind(...params(q));
@@ -176,8 +200,9 @@ class Select {
     if (limit != null) text += ` LIMIT ${Number(limit)}`;
     return new Sql(text, out.params);
   }
-  async all() { return (await exec(this.build(), 'all')).map((r) => fromRow(this.t, r)); }
-  async get() { return fromRow(this.t, await exec(this.build(1), 'get')); }
+  // Rows are rebuilt from the cached raw rows on every call, so callers can change them.
+  async all() { return (await cachedExec(this.t[TABLE].name, this.build(), 'all')).map((r) => fromRow(this.t, r)); }
+  async get() { return fromRow(this.t, await cachedExec(this.t[TABLE].name, this.build(1), 'get')); }
 }
 
 class Insert {

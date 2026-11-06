@@ -121,13 +121,27 @@ export async function clearCommands(chatId, userId) {
  * Telegram allows it: t.me/<username> for public groups, or the latest stored
  * message for private supergroups (members can open it). Basic groups have no link.
  */
+// A group's public @username (or none), kept for a while: getChat costs a
+// Telegram round trip (~220 ms) on every open of a group in the panel.
+const CHAT_MS = 10 * 60 * 1000;
+const chatNames = new Map(); // tgId → { at, username }
+async function chatUsername(tgId) {
+  const hit = chatNames.get(tgId);
+  if (hit && Date.now() - hit.at < CHAT_MS) return hit.username;
+  const chat = await api.getChat({ chat_id: tgId }).catch(() => null);
+  if (chat) chatNames.set(tgId, { at: Date.now(), username: chat.username ?? null });
+  return chat?.username ?? null;
+}
+
 export async function groupTitle(group) {
   const name = String(group.name ?? group.tgId).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   let url = null;
-  const chat = await api.getChat({ chat_id: group.tgId }).catch(() => null);
-  if (chat?.username) url = `https://t.me/${chat.username}`;
+  const [username, latest] = await Promise.all([
+    chatUsername(group.tgId),
+    String(group.tgId).startsWith('-100') ? latestTgMessageId(group.id) : 0,
+  ]);
+  if (username) url = `https://t.me/${username}`;
   else if (String(group.tgId).startsWith('-100')) {
-    const latest = await latestTgMessageId(group.id);
     if (latest) url = `https://t.me/c/${String(group.tgId).slice(4)}/${latest}`;
   }
   return url ? `🏪 <b><a href="${url}">${name}</a></b>` : `🏪 <b>${name}</b>`;

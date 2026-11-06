@@ -125,28 +125,27 @@ export default async function (message) {
       }
 
       case 'menu': {
-        const role = await roleIn(message.from, chatId);
-        const group = await getGroup(chatId);
-        if (!group || !(await hasActiveSubscription(group))) {
+        const [role, group] = await Promise.all([roleIn(message.from, chatId), getGroup(chatId)]);
+        const [active, status, lottery] = group
+          ? await Promise.all([hasActiveSubscription(group), accessStatus(group), dailyConfig(group.id)])
+          : [false];
+        if (!active) {
           // Managers land on the sync menu (register or renew); everyone else can subscribe.
           if (canManage(role)) await api.sendMessage({ chat_id: chatId, ...syncMenu(group?.lifetime, role === 'super') });
           else await sendScreen(chatId, await subscriptionScreen(message.chat, group));
           break;
         }
-        const status = await accessStatus(group);
-        const lottery = await dailyConfig(group.id);
         const daily = lottery.enabled && !!lottery.memberCode;
         await api.sendMessage({ chat_id: chatId, text: menuText(status), reply_markup: menuKeyboard(canManage(role), status, daily) });
         break;
       }
 
       case 'sync': {
-        const role = await roleIn(message.from, chatId);
+        const [role, group] = await Promise.all([roleIn(message.from, chatId), getGroup(chatId)]);
         if (!canManage(role)) {
           await api.sendMessage({ chat_id: chatId, text: 'You are not admin 😡' });
           break;
         }
-        const group = await getGroup(chatId);
         await api.sendMessage({ chat_id: chatId, ...syncMenu(group?.lifetime, role === 'super') });
         break;
       }

@@ -294,10 +294,6 @@ export async function collectDays(login, agent, wanted, { budgetMs = 12000, refr
     saved.set(day, data);
     stale.delete(day);
   }
-  // Days of months older than KEEP_MONTHS go.
-  const { y, m } = today();
-  const cutoff = new Date(Date.UTC(y, m - 1 - KEEP_MONTHS, 1)).toISOString().slice(0, 10);
-  await db.delete(agentDailyTotals).where(lt(agentDailyTotals.day, cutoff)).run();
   const missing = days.filter((d) => !saved.has(d)).length;
   return { days: saved, missing, total: days.length, members: await membersOf(json, agent), error };
 }
@@ -421,6 +417,11 @@ export async function savedSubjectTotals(loginId, who, days) {
  */
 export async function collectYesterday(logins) {
   const yesterday = dayKey(addDays(today(), -1));
+  // Days of months older than KEEP_MONTHS go (here, once a minute, rather than
+  // on every read: a write on every Mini App open).
+  const { y, m } = today();
+  const cutoff = new Date(Date.UTC(y, m - 1 - KEEP_MONTHS, 1)).toISOString().slice(0, 10);
+  await db.delete(agentDailyTotals).where(lt(agentDailyTotals.day, cutoff)).run();
   for (const login of logins) {
     for (const agent of await loginAgents(login.id)) {
       // collectDays skips it when it's already saved and final.

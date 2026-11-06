@@ -26,13 +26,15 @@ export default async function (input, ctx) {
     byDay.set(e.day, e);
     days.push(e);
   }
-  for (const r of await totalsByDay(group.id, range)) {
+  const [dayRows, botRows, prevRows, status] = await Promise.all([
+    totalsByDay(group.id, range), totalsByBot(group.id, range), totalsByBot(group.id, previous), accessStatus(group),
+  ]);
+  for (const r of dayRows) {
     const e = byDay.get(r.day);
     if (e && r.currency in e) { e[r.currency] += r.total; e.ops += r.ops; }
   }
 
   const banks = new Map();
-  const botRows = await totalsByBot(group.id, range);
   for (const r of botRows) {
     if (!banks.has(r.botTgId)) banks.set(r.botTgId, { name: WHITELIST_BOTS[r.botTgId] ?? String(r.botTgId), KHR: 0, USD: 0, ops: 0 });
     const b = banks.get(r.botTgId);
@@ -41,12 +43,12 @@ export default async function (input, ctx) {
   }
 
   return {
-    group: { tgId: group.tgId, name: group.name ?? String(group.tgId), role, status: await accessStatus(group) },
+    group: { tgId: group.tgId, name: group.name ?? String(group.tgId), role, status },
     from: range.from,
     to: range.to,
     days,
     banks: [...banks.values()],
     total: sum(botRows),
-    previous: sum(await totalsByBot(group.id, previous)),
+    previous: sum(prevRows),
   };
 }

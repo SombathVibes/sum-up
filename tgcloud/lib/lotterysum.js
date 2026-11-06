@@ -32,8 +32,10 @@ export async function lotteryRange(login, who, days, { saved = false } = {}) {
   // and the saved by-draw report stands in for it (below). Fetching it anyway
   // cost the Mini App's lottery card ~1.4 s of lottery API calls per open.
   const past = days.filter((d) => d !== todayKey);
-  const cur = saved ? await savedSubjectTotals(login.id, who, days) : await subjectTotals(login, who, past, { savedFirst: true });
-  const row = days.includes(todayKey) ? await reportForDay(login.id, todayKey, who.key) : null;
+  const [cur, row] = await Promise.all([
+    saved ? savedSubjectTotals(login.id, who, days) : subjectTotals(login, who, past, { savedFirst: true }),
+    days.includes(todayKey) ? reportForDay(login.id, todayKey, who.key) : null,
+  ]);
   const side = (field, send) => {
     const total = pick(cur[field]);
     const perDay = cur.perDay.filter((d) => d[field]).map((d) => ({ day: d.day, bet: d[field].commissionKhr, reward: d[field].rewardAmountKhr, wl: d[field].winLoseAmountKhr }));

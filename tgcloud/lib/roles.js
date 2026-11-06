@@ -48,8 +48,8 @@ export const setSuper = (userId, isSuper) =>
 /** 'super' | 'manage' | 'view' | null for this user in the group with this Telegram id. */
 export async function roleIn(user, groupTgId) {
   if (!user) return null;
-  if (await isSuper(user)) return 'super';
-  const group = await getGroup(groupTgId);
+  const [sup, group] = await Promise.all([isSuper(user), getGroup(groupTgId)]);
+  if (sup) return 'super';
   if (!group) return null;
   const row = await db.select().from(adminGroups)
     .where(and(eq(adminGroups.userId, user.id), eq(adminGroups.groupId, group.id)))

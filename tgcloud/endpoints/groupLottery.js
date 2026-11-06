@@ -19,13 +19,12 @@ export default async function (input, ctx) {
   const range = parseRange(input.from, input.to);
   const length = range.end - range.start + 1;
   const who = await groupSubject(cfg);
-  let cur;
-  try {
-    cur = await lotteryRange(login, who, daysOf(range.start, range.end));
-  } catch (e) {
-    return { enabled: true, member: subjectLabel(who), error: e.message };
-  }
-  const prev = await lotteryRange(login, who, daysOf(range.start - length, range.start - 1)).catch(() => null);
+  // This period and the one before it, at once.
+  const [cur, prev] = await Promise.all([
+    lotteryRange(login, who, daysOf(range.start, range.end)).catch((e) => ({ failed: e })),
+    lotteryRange(login, who, daysOf(range.start - length, range.start - 1)).catch(() => null),
+  ]);
+  if (cur.failed) return { enabled: true, member: subjectLabel(who), error: cur.failed.message };
   const before = prev && !prev.missing ? prev : null;
   return {
     enabled: true,

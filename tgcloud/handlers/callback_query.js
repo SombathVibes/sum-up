@@ -5,9 +5,26 @@ import { api, BotApiError, InputFile } from 'sdk';
 
 // Telegram rejects answers to taps it considers too old (e.g. made while the
 // bot was restarting); the tap's work still goes ahead.
-const answer = (params) => api.answerCallbackQuery(params).catch((e) => {
-  if (!(e instanceof BotApiError && e.code === 400)) throw e;
-});
+// The answer goes out alongside the tap's work rather than before it (it only
+// stops the button's spinner; waiting for it cost every tap ~220 ms): the
+// handler waits for it at the end (the Worker stops when the handler returns).
+const answering = new Set();
+const answer = (params) => {
+  const p = api.answerCallbackQuery(params).catch((e) => {
+    if (!(e instanceof BotApiError && e.code === 400)) console.error('answerCallbackQuery', e?.message ?? e);
+  });
+  answering.add(p);
+  p.finally(() => answering.delete(p));
+  return undefined;
+};
+
+export default async function (query) {
+  try {
+    return await handle(query);
+  } finally {
+    await Promise.all([...answering]);
+  }
+}
 import {
   addDays, addMonths, dayKey, dayOf, dayRange, formatKhmerDate, monthKey, monthRange,
   parseDayKey, parseMonthKey, today, weekRange, yearRange,
@@ -35,7 +52,7 @@ import {
   syncMenu, yearCalendarMenu,
 } from '../lib/ui.js';
 
-export default async function (query) {
+async function handle(query) {
   let data = query.data ?? '';
   const msg = query.message;
   if (!msg) return answer({ callback_query_id: query.id });
@@ -300,13 +317,12 @@ export default async function (query) {
     switch (key) {
       // Menus are built for whoever tapped, so only admins see the Sync row.
       case 'BACK': {
-        const status = await accessStatus(group);
-        const cfg = await dailyConfig(group.id);
+        const [status, cfg, title] = await Promise.all([accessStatus(group), dailyConfig(group.id), scopedId ? groupTitle(group) : null]);
         // 📊 Excel ភ្នាក់ងារ only in the private panel, for groups that follow a login.
         const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled && !!cfg.memberCode, !!scopedId && !!cfg.loginId);
         // In the private panel: the group's name on top, and a way back to all groups.
         if (scopedId) {
-          return show(`${await groupTitle(group)}\n${menuText(status)}`, {
+          return show(`${title}\n${menuText(status)}`, {
             parse_mode: 'HTML',
             reply_markup: {
               inline_keyboard: [

@@ -73,8 +73,8 @@ async function dispatch(update, colo) {
   try {
     await handler(update[type], { update });
     // Where the time went: Telegram calls and D1 queries (count · ms), and the Cloudflare location.
-    const { api: a, db: d } = takeStats();
-    console.log(`✓ ${type} ${update[type]?.text ?? update[type]?.data ?? ''} (${Date.now() - started} ms · Telegram ${a.n}× ${a.ms} ms · D1 ${d.n}× ${d.ms} ms · ${colo ?? '?'})`);
+    const { api: a, db: d, fetch: f } = takeStats();
+    console.log(`✓ ${type} ${update[type]?.text ?? update[type]?.data ?? ''} (${Date.now() - started} ms · Telegram ${a.n}× ${a.ms} ms · D1 ${d.n}× ${d.ms} ms${f.n ? ` · lottery API ${f.n}× ${f.ms} ms` : ''} · ${colo ?? '?'})`);
   } catch (e) {
     console.error(`✗ ${type}`, e?.stack ?? e);
   }
