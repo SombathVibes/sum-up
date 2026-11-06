@@ -127,18 +127,19 @@ function TimesPicker({ times, onChange }) {
   );
 }
 
-/** Add or edit one login. */
-function LoginForm({ login, onSaved, onCancel, onDeleted }) {
-  const [form, setForm] = useState(() => ({ ...NEW, ...login, password: '' }));
+/** Add or edit one login: username and password; the rest under ⚙️ (the defaults fill it). */
+function LoginForm({ login, defaults, onSaved, onCancel, onDeleted }) {
+  const [form, setForm] = useState(() => ({ ...NEW, ...(login ? {} : { baseUrl: defaults?.baseUrl ?? '', basicAuth: defaults?.basicAuth ?? '', headers: defaults?.headers ?? NEW.headers }), ...login, password: '' }));
   const [showPw, setShowPw] = useState(false);
+  const [more, setMore] = useState(false);
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const set = (patch) => { setForm({ ...form, ...patch }); setError(null); };
   const save = () => {
     setBusy('save');
     call('loginSave', { id: login?.id, login: form })
-      .then((r) => onSaved(r.logins, r.id))
-      .catch((e) => setError(FIELD_ERRORS[e.parameters?.field] ?? e.message))
+      .then((r) => onSaved(r.logins, r.id, r.check))
+      .catch((e) => { setError(FIELD_ERRORS[e.parameters?.field] ?? e.message); if (['baseUrl', 'basicAuth', 'headers', 'times'].includes(e.parameters?.field)) setMore(true); })
       .finally(() => setBusy(null));
   };
   const remove = () => {
@@ -146,71 +147,210 @@ function LoginForm({ login, onSaved, onCancel, onDeleted }) {
     setBusy('delete');
     call('loginDelete', { id: login.id }).then((r) => onDeleted(r.logins), (e) => setError(e.message)).finally(() => setBusy(null));
   };
+  const summary = [`⏰ ${form.times.length === 1 ? form.times[0] : `${kh(form.times.length)} ដង/ថ្ងៃ`}`, form.sendReport ? '📤 សាង' : null, form.enabled ? null : '⏸ ផ្អាក', host(form.baseUrl) || '⚠️ គ្មាន API URL'].filter(Boolean).join(' · ');
   return (
     <div className="login-form">
       <label className="label">
-        <span className="muted small">API URL (ឧ. https://…/api/v1.0.0) · Login និង Report ប្រើផ្លូវថេរ</span>
-        <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          placeholder="https://example.com/api/v1.0.0" value={form.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
-      </label>
-      <label className="label">
         <span className="muted small">Username</span>
-        <input className="field" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoComplete="off"
+        <input className="field roomy" autoCapitalize="off" autoCorrect="off" spellCheck={false} autoComplete="off"
           value={form.username} onChange={(e) => set({ username: e.target.value })} />
       </label>
       <label className="label">
         <span className="muted small">Password {login?.hasPassword && <span className="ok">· បានរក្សាទុក ✓</span>}</span>
         <div className="row">
-          <input className="field grow" type={showPw ? 'text' : 'password'} autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+          <input className="field roomy grow" type={showPw ? 'text' : 'password'} autoComplete="new-password" autoCapitalize="off" autoCorrect="off" spellCheck={false}
             placeholder={login?.hasPassword ? 'ទុកទទេ ដើម្បីប្រើដដែល' : ''} value={form.password} onChange={(e) => set({ password: e.target.value })} />
           <button type="button" className="icon" onClick={() => setShowPw(!showPw)} aria-label={showPw ? 'Hide password' : 'Show password'}>{showPw ? '🙈' : '👁'}</button>
         </div>
       </label>
-      <label className="label">
-        <span className="muted small">Basic auth លើ Login (ស្រេចចិត្ត · តម្លៃដែលបានបង្កើត)</span>
-        <input className="field mono" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          placeholder="Basic dXNlcjpwYXNz…" value={form.basicAuth} onChange={(e) => set({ basicAuth: e.target.value })} />
-      </label>
-      <label className="label">
-        <span className="muted small">Header បន្ថែម · មួយបន្ទាត់ម្ដង «Name: value»</span>
-        <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false}
-          placeholder="platformtype: p99l" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
-      </label>
-      <div className="row">
-        <div className="grow">
-          <div className="small">📤 ទាញ សាង ផងដែរ</div>
-          <div className="muted small">isSend=true · បង្ហាញខាងក្រោមរបាយការណ៍</div>
+
+      <button type="button" className="more" onClick={() => setMore(!more)}>
+        <span>⚙️ កម្រិតខ្ពស់</span><span className="muted small grow">{summary}</span><span>{more ? '▴' : '▾'}</span>
+      </button>
+      {more && (
+        <div className="advanced">
+          <label className="label">
+            <span className="muted small">API URL (ឧ. https://…/api/v1.0.0)</span>
+            <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              placeholder="https://example.com/api/v1.0.0" value={form.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
+          </label>
+          <label className="label">
+            <span className="muted small">Basic auth លើ Login (ស្រេចចិត្ត)</span>
+            <input className="field mono" autoComplete="off" autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              placeholder="Basic dXNlcjpwYXNz…" value={form.basicAuth} onChange={(e) => set({ basicAuth: e.target.value })} />
+          </label>
+          <label className="label">
+            <span className="muted small">Header បន្ថែម · មួយបន្ទាត់ម្ដង «Name: value»</span>
+            <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              placeholder="platformtype: p99l" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
+          </label>
+          <div className="row">
+            <div className="grow">
+              <div className="small">📤 ទាញ សាង ផងដែរ</div>
+              <div className="muted small">isSend=true · បង្ហាញខាងក្រោមរបាយការណ៍</div>
+            </div>
+            <Switch on={form.sendReport} onChange={(sendReport) => set({ sendReport })} label="សាង" />
+          </div>
+          <div className="small">⏰ ទាញតាមម៉ោង <span className="muted">(ម៉ោងភ្នំពេញ)</span></div>
+          <TimesPicker times={form.times} onChange={(times) => set({ times })} />
+          <div className="row">
+            <div className="grow">
+              <div className="small">ដំណើរការតាមម៉ោង</div>
+              <div className="muted small">{form.enabled ? 'បើក' : 'ផ្អាក (ទិន្នន័យទាញតែពេលមានអ្នកមើល)'}</div>
+            </div>
+            <Switch on={form.enabled} onChange={(enabled) => set({ enabled })} label="Schedule" />
+          </div>
         </div>
-        <Switch on={form.sendReport} onChange={(sendReport) => set({ sendReport })} label="សាង" />
-      </div>
-      <div className="small">⏰ ទាញតាមម៉ោង <span className="muted">(ម៉ោងភ្នំពេញ)</span></div>
-      <TimesPicker times={form.times} onChange={(times) => set({ times })} />
-      <div className="row">
-        <div className="grow">
-          <div className="small">ដំណើរការតាមម៉ោង</div>
-          <div className="muted small">{form.enabled ? 'បើក' : 'ផ្អាក (ទិន្នន័យទាញតែពេលមានអ្នកមើល)'}</div>
-        </div>
-        <Switch on={form.enabled} onChange={(enabled) => set({ enabled })} label="Schedule" />
-      </div>
+      )}
       {error && <p className="error small">{error}</p>}
       <div className="row">
         {login && <button className="icon" disabled={!!busy} onClick={remove}>{busy === 'delete' ? '…' : '🗑 លុប'}</button>}
         <button className="icon" disabled={!!busy} onClick={onCancel}>បោះបង់</button>
-        <button className="btn grow" disabled={!!busy} onClick={save}>{busy === 'save' ? 'កំពុងរក្សាទុក…' : '💾 រក្សាទុក'}</button>
+        <button className="btn grow" disabled={!!busy || !form.username.trim() || (!login?.hasPassword && !form.password)} onClick={save}>
+          {busy === 'save' ? 'កំពុងរក្សាទុក និងពិនិត្យ…' : '💾 រក្សាទុក និងពិនិត្យ'}
+        </button>
       </div>
     </div>
   );
 }
 
-export default function Logins() {
+/** 🌐 The API URL, Basic and headers new logins start from (super admins). */
+function DefaultsForm({ defaults, onSaved }) {
+  const [form, setForm] = useState(defaults);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState(null);
+  const set = (patch) => { setForm({ ...form, ...patch }); setNote(null); };
+  const save = () => {
+    setBusy(true);
+    call('loginDefaults', { defaults: form })
+      .then((r) => { onSaved(r.defaults); setNote('✅ បានរក្សាទុក'); })
+      .catch((e) => setNote(`⚠️ ${FIELD_ERRORS[e.parameters?.field] ?? e.message}`))
+      .finally(() => setBusy(false));
+  };
+  return (
+    <Fold title="🌐 API លំនាំដើម" summary={`${host(defaults.baseUrl) || 'មិនទាន់កំណត់'} · Login ថ្មីប្រើវាដោយស្វ័យប្រវត្តិ`}>
+      <p className="muted small">Login ថ្មី (រួមទាំងរបស់អ្នកគ្រប់គ្រង) ប្រើ API URL, Basic និង Header ទាំងនេះ — គេដាក់តែ Username និង Password។</p>
+      <input className="field" inputMode="url" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="https://example.com/api/v1.0.0" value={form.baseUrl} onChange={(e) => set({ baseUrl: e.target.value })} />
+      <input className="field mono" autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="Basic …" value={form.basicAuth} onChange={(e) => set({ basicAuth: e.target.value })} />
+      <textarea className="field mono" rows={2} autoCapitalize="off" autoCorrect="off" spellCheck={false} placeholder="platformtype: p99l" value={form.headers} onChange={(e) => set({ headers: e.target.value })} />
+      <div className="row">
+        {note && <span className="small grow">{note}</span>}
+        <button className="btn small" disabled={busy} onClick={save}>{busy ? '…' : '💾 រក្សាទុក'}</button>
+      </div>
+    </Fold>
+  );
+}
+
+// ---------------------------------------------------------------- 🔗 link to groups
+/** Group name and member text in lower case, cut into words of 3+ letters or digits. */
+const words = (s) => String(s ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 3);
+
+/** The member whose username or nickname shares the most words with the group's name, or null. */
+function suggest(groupName, members) {
+  const want = words(groupName);
+  let best = null;
+  let score = 0;
+  for (const m of members) {
+    const text = `${m.username} ${m.nickname ?? ''}`.toLowerCase();
+    const n = want.filter((w) => text.includes(w)).length;
+    if (n > score) { best = m; score = n; }
+  }
+  return best;
+}
+
+/** One login's 🔗: each of the caller's groups with a member to follow, saved row by row. */
+function LinkGroups({ login, onClose, onChanged }) {
+  const [data, setData] = useState(null);
+  const [error, setError] = useState(null);
+  const [q, setQ] = useState('');
+  const [picked, setPicked] = useState({}); // tgId → userCode
+  const [busy, setBusy] = useState(null);
+  const [notes, setNotes] = useState({});
+  const load = () => call('loginLinks', { loginId: login.id }).then(setData, setError);
+  useEffect(() => { load(); }, [login.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (error) return <p className="error small">{error.message}</p>;
+  if (!data) return <SkeletonCard lines={3} />;
+  const members = data.people.flatMap((a) => a.members.map((m) => ({ ...m, agentCode: a.agentCode, agent: a.agent })));
+  const filter = q.trim().toLowerCase();
+  const shown = (m) => !filter || `${m.username} ${m.nickname ?? ''} ${m.agent}`.toLowerCase().includes(filter);
+  const link = (g, code) => {
+    const m = members.find((x) => x.userCode === code);
+    const config = m
+      ? { enabled: true, loginId: login.id, memberCode: m.userCode, memberName: m.username, agentCode: m.agentCode }
+      : { enabled: false, loginId: 0, memberCode: '', memberName: '', agentCode: '' };
+    setBusy(g.tgId);
+    call('dailySave', { groupId: g.tgId, config })
+      .then((r) => {
+        setData({ ...data, groups: data.groups.map((x) => (x.tgId === g.tgId ? { ...x, config: r.config } : x)) });
+        setNotes((n) => ({ ...n, [g.tgId]: m ? '✅ បានភ្ជាប់' : '⏸ បានបិទ' }));
+        onChanged?.();
+      })
+      .catch((e) => setNotes((n) => ({ ...n, [g.tgId]: `⚠️ ${e.message}` })))
+      .finally(() => setBusy(null));
+  };
+  const linked = data.groups.filter((g) => g.config.enabled && g.config.loginId === login.id).length;
+
+  return (
+    <div className="links">
+      <div className="row">
+        <strong className="grow">🔗 ភ្ជាប់ក្រុម · 🔑 {login.username}</strong>
+        <button className="icon small" onClick={onClose}>✕</button>
+      </div>
+      <p className="muted small">ជ្រើសសមាជិកសម្រាប់ក្រុមនីមួយៗ — ក្នុងក្រុម គេឃើញតែរបាយការណ៍របស់សមាជិកនោះ។ ⭐ = ឈ្មោះស្រដៀងឈ្មោះក្រុម។ ភ្ជាប់រួច {kh(linked)}/{kh(data.groups.length)}។</p>
+      {!members.length && <p className="muted small">⚠️ Login នេះមិនទាន់មានសមាជិក — ចុច «🔄 ពិនិត្យ Login + បញ្ជី»។</p>}
+      {members.length > 8 && <input className="field" placeholder="🔍 ស្វែងរកសមាជិក…" value={q} onChange={(e) => setQ(e.target.value)} />}
+      {!data.groups.length && <p className="muted small">មិនទាន់មានក្រុមដែលអ្នកគ្រប់គ្រងទេ។</p>}
+      {data.groups.map((g) => {
+        const mineNow = g.config.enabled && g.config.loginId === login.id;
+        const best = suggest(g.name, members);
+        const value = picked[g.tgId] ?? (mineNow ? g.config.memberCode : best?.userCode ?? '');
+        const options = members.filter((m) => shown(m) || m.userCode === value);
+        return (
+          <div key={g.tgId} className="link-row">
+            <div className="small"><strong>🏪 {g.name}</strong></div>
+            <div className={`small ${mineNow ? 'ok' : 'muted'}`}>
+              {g.locked ? '🔒 ប្រើ Login របស់អ្នកផ្សេង' : mineNow ? `✅ 👤 ${g.config.memberName}` : g.config.enabled ? '↪️ ប្រើ Login ផ្សេង' : '⏸ មិនទាន់ភ្ជាប់'}
+            </div>
+            {!g.locked && members.length > 0 && (
+              <div className="row">
+                <select className="field grow" value={value} onChange={(e) => setPicked({ ...picked, [g.tgId]: e.target.value })}>
+                  <option value="">— ជ្រើសសមាជិក —</option>
+                  {options.map((m) => (
+                    <option key={m.userCode} value={m.userCode}>{m.userCode === best?.userCode ? '⭐ ' : ''}👤 {m.username}{m.nickname ? ` · ${m.nickname}` : ''}</option>
+                  ))}
+                </select>
+                {value && value !== (mineNow ? g.config.memberCode : '') && (
+                  <button className="btn small" disabled={busy === g.tgId} onClick={() => link(g, value)}>{busy === g.tgId ? '…' : '✅ ភ្ជាប់'}</button>
+                )}
+                {mineNow && value === g.config.memberCode && (
+                  <button className="icon small" disabled={busy === g.tgId} onClick={() => link(g, '')}>បិទ</button>
+                )}
+              </div>
+            )}
+            {notes[g.tgId] && <div className="small">{notes[g.tgId]}</div>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function Logins({ standalone = false }) {
   const [logins, setLogins] = useState(null);
+  const [defaults, setDefaults] = useState(null);
+  const [canEditDefaults, setCanEditDefaults] = useState(false);
   const [editing, setEditing] = useState(null); // null | 'new' | id
+  const [linking, setLinking] = useState(null); // login id
   const [busy, setBusy] = useState(null); // `${action} ${id}`
   const [notes, setNotes] = useState({}); // id → text
   const [error, setError] = useState(null);
-  useEffect(() => { call('logins').then((r) => setLogins(r.logins), setError); }, []);
+  useEffect(() => {
+    call('logins').then((r) => { setLogins(r.logins); setDefaults(r.defaults); setCanEditDefaults(!!r.canEditDefaults); }, setError);
+  }, []);
 
   const note = (id, text) => setNotes((n) => ({ ...n, [id]: text }));
+  const checked = (check) => (check?.ok ? `✅ Login ជោគជ័យ · 🧑‍💼 ${kh(check.agents)} · 👤 ${kh(check.members)}` : `⚠️ Login មិនជោគជ័យ: ${check?.error ?? ''}`);
   const sync = (l) => {
     setBusy(`sync ${l.id}`);
     call('loginSync', { id: l.id })
@@ -225,17 +365,29 @@ export default function Logins() {
       .catch((e) => note(l.id, `⚠️ ${e.message}`))
       .finally(() => setBusy(null));
   };
+  const saved = (list, id, check) => {
+    setLogins(list);
+    setEditing(null);
+    note(id, checked(check));
+    // Signed in: straight on to 🔗 linking it to groups.
+    if (check?.ok) setLinking(id);
+  };
 
   if (!logins && !error) return <SkeletonCard lines={2} />;
   if (!logins) return <Fold title="🔑 Login ឆ្នោត" summary={`⚠️ ${error.message}`} />;
   const running = logins.filter((l) => l.enabled).length;
-  return (
-    <Fold title="🔑 Login ឆ្នោត" summary={logins.length ? `${kh(logins.length)} Login · ${kh(running)} កំពុងដំណើរការ · ${logins.map((l) => l.username).join(', ')}` : 'មិនទាន់មាន Login'} start={!logins.length}>
-      <p className="muted small">Login នីមួយៗទាញទិន្នន័យតាមម៉ោងរបស់វា៖ របាយការណ៍ទាំងអស់ របាយការណ៍ និងសរុបរបស់សមាជិកទាំងអស់។ ក្រុមជ្រើសតែសមាជិក (📥 ឆ្នោត)។</p>
+  const body = (
+    <>
+      {!logins.length && editing !== 'new' && (
+        <div className="steps">
+          <div><strong>① ➕ បន្ថែម Login</strong> <span className="muted small">— Username និង Password</span></div>
+          <div><strong>② 🔗 ភ្ជាប់ក្រុម</strong> <span className="muted small">— ជ្រើសសមាជិកសម្រាប់ក្រុមនីមួយៗ</span></div>
+          <div><strong>③ ✅ រួចរាល់</strong> <span className="muted small">— Bot ទាញរបាយការណ៍តាមម៉ោង</span></div>
+        </div>
+      )}
       {logins.map((l) => (editing === l.id ? (
-        <LoginForm key={l.id} login={l} onCancel={() => setEditing(null)}
-          onSaved={(list) => { setLogins(list); setEditing(null); note(l.id, '✅ បានរក្សាទុក'); }}
-          onDeleted={(list) => { setLogins(list); setEditing(null); }} />
+        <LoginForm key={l.id} login={l} defaults={defaults} onCancel={() => setEditing(null)}
+          onSaved={saved} onDeleted={(list) => { setLogins(list); setEditing(null); }} />
       ) : (
         <div key={l.id} className="login-item">
           <div className="row">
@@ -251,17 +403,27 @@ export default function Logins() {
             <button className="icon" onClick={() => setEditing(l.id)}>✏️</button>
           </div>
           <div className="row">
-            <button className="icon grow small" disabled={!!busy} onClick={() => sync(l)}>{busy === `sync ${l.id}` ? 'កំពុងទាញ…' : '🔄 ពិនិត្យ Login + បញ្ជី'}</button>
+            <button className="btn grow small" onClick={() => setLinking(linking === l.id ? null : l.id)}>🔗 ភ្ជាប់ក្រុម</button>
+            <button className="icon grow small" disabled={!!busy} onClick={() => sync(l)}>{busy === `sync ${l.id}` ? 'កំពុងទាញ…' : '🔄 ពិនិត្យ'}</button>
             <button className="icon grow small" disabled={!!busy} onClick={() => run(l)}>{busy === `run ${l.id}` ? 'កំពុងទាញ…' : '▶️ ទាញឥឡូវ'}</button>
           </div>
           {notes[l.id] && <pre className="note small">{notes[l.id]}</pre>}
+          {linking === l.id && <LinkGroups login={l} onClose={() => setLinking(null)} onChanged={() => call('logins').then((r) => setLogins(r.logins), () => {})} />}
         </div>
       )))}
       {editing === 'new' ? (
-        <LoginForm onCancel={() => setEditing(null)} onSaved={(list) => { setLogins(list); setEditing(null); }} onDeleted={() => {}} />
+        <LoginForm defaults={defaults} onCancel={() => setEditing(null)} onSaved={saved} onDeleted={() => {}} />
       ) : (
-        <button className="btn small" onClick={() => setEditing('new')}>➕ បន្ថែម Login</button>
+        <button className="btn" onClick={() => setEditing('new')}>➕ បន្ថែម Login</button>
       )}
+      {canEditDefaults && defaults && <DefaultsForm defaults={defaults} onSaved={setDefaults} />}
+    </>
+  );
+  // A manager's 🔑 tab is this screen alone: open, not folded.
+  if (standalone) return <section className="card">{body}</section>;
+  return (
+    <Fold title="🔑 Login ឆ្នោត" summary={logins.length ? `${kh(logins.length)} Login · ${kh(running)} កំពុងដំណើរការ · ${logins.map((l) => l.username).join(', ')}` : 'មិនទាន់មាន Login'} start={!logins.length}>
+      {body}
     </Fold>
   );
 }

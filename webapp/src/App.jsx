@@ -69,7 +69,7 @@ export default function App() {
       {tab === 'team' && me?.superAdmin && <Team me={me} />}
       {tab === 'settings' && me?.superAdmin && <Settings />}
       {/* Managers: only their own 🔑 lottery logins (no payment, QR or template). */}
-      {tab === 'settings' && !me?.superAdmin && me?.canLogins && <main className="content"><Logins /></main>}
+      {tab === 'settings' && !me?.superAdmin && me?.canLogins && <main className="content"><Logins standalone /></main>}
       <nav className="tabs">
         <button className={tab === 'groups' ? 'on' : ''} onClick={() => setTab('groups')}>🏪 ក្រុម</button>
         <button className={tab === 'billing' ? 'on' : ''} onClick={() => setTab('billing')}>

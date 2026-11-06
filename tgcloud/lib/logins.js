@@ -12,6 +12,7 @@ import { asc, eq } from 'sdk/db';
 import { lotteryLogins } from '../schema.js';
 import { SYNC_HELPER_SECRET, SYNC_HELPER_URL } from './config.js';
 import { now, pad2 } from './dates.js';
+import { getSetting, setSetting } from './store.js';
 
 const OFFSET = 7 * 3600; // Phnom Penh, UTC+7
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -243,4 +244,45 @@ export async function loginUser(request) {
   const p = jwtPayload((await request.token()) ?? '') ?? {};
   const role = String(p.userRole ?? '');
   return { code: String(p.userCode ?? ''), level: /^[a-z]+$/i.test(role) ? role.toLowerCase() : 'agent', name: String(p.username ?? p.user_name ?? '') };
+}
+
+// ---------------------------------------------------------------- defaults
+// The API URL, Basic value and headers are the same for every login on the
+// platform: a super admin sets them once (settings 'login_defaults') and a new
+// login takes them, so adding one is just a username and password.
+const DEFAULTS_KEY = 'login_defaults';
+
+/** { baseUrl, basicAuth, headers }: saved, else the first super admin login's, else empty. */
+export async function loginDefaults() {
+  let saved = null;
+  try {
+    saved = JSON.parse((await getSetting(DEFAULTS_KEY)) ?? 'null');
+  } catch {
+    // broken: fall back
+  }
+  if (saved?.baseUrl) return saved;
+  const first = (await listLogins()).find((l) => !l.ownerId && l.baseUrl);
+  return first
+    ? { baseUrl: first.baseUrl, basicAuth: first.basicAuth, headers: first.headers }
+    : { baseUrl: '', basicAuth: '', headers: 'platformtype: p99l' };
+}
+
+/** Checks and saves the defaults: { values } or { error } naming the bad field. */
+export async function saveLoginDefaults(input) {
+  const { values, error } = checkLogin({ ...input, username: 'x', times: ['21:00'] });
+  if (error) return { error };
+  const out = { baseUrl: values.baseUrl, basicAuth: values.basicAuth, headers: values.headers };
+  await setSetting(DEFAULTS_KEY, JSON.stringify(out));
+  return { values: out };
+}
+
+/** A new login's form with the defaults filled in where it left them empty. */
+export async function withDefaults(input) {
+  const d = await loginDefaults();
+  return {
+    ...input,
+    baseUrl: String(input.baseUrl ?? '').trim() || d.baseUrl,
+    basicAuth: String(input.basicAuth ?? '').trim() || d.basicAuth,
+    headers: String(input.headers ?? '').trim() || d.headers,
+  };
 }

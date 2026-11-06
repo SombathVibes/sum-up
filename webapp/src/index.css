@@ -122,6 +122,17 @@ details summary { cursor: pointer; padding: 4px 0; }
 .login-item, .login-form { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--bg2); }
 .login-form .field { background: var(--bg); }
 .note { margin: 0; padding: 8px; border-radius: 8px; background: var(--bg); white-space: pre-wrap; font-family: inherit; }
+.field.roomy { font-size: 17px; padding: 12px; }
+/* ⚙️ the login form's advanced part, folded */
+.more { display: flex; align-items: center; gap: 8px; width: 100%; padding: 10px; border: 0; border-radius: 10px; background: var(--bg); color: var(--text); text-align: left; cursor: pointer; }
+.more .grow { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.advanced { display: flex; flex-direction: column; gap: 8px; }
+/* ① ② ③ first-time steps */
+.steps { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 10px; background: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+/* 🔗 linking a login to groups */
+.links { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 10px; background: var(--bg); }
+.link-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; border-top: 1px solid color-mix(in srgb, var(--muted) 20%, transparent); }
+.link-row .field { background: var(--bg2); min-width: 0; }
 /* Cards that fold (Fold.jsx) */
 .card.fold { display: block; }
 .card.fold > summary { list-style: none; cursor: pointer; display: flex; flex-direction: column; gap: 2px; padding-right: 22px; position: relative; }
