@@ -261,7 +261,7 @@ const monthDays = (month) => {
  * total, members, error } (missing > 0: run again; error: why the last day
  * failed).
  */
-export async function collectDays(login, agent, wanted, { budgetMs = 12000, refresh = false } = {}) {
+export async function collectDays(login, agent, wanted, { budgetMs = 12000, refresh = false, savedFirst = false } = {}) {
   const started = Date.now();
   const todayKey = dayKey(today());
   const days = [...new Set(wanted)].filter((d) => d <= todayKey).sort();
@@ -273,7 +273,9 @@ export async function collectDays(login, agent, wanted, { budgetMs = 12000, refr
   for (const r of rows) {
     if (!days.includes(r.day)) continue;
     saved.set(r.day, JSON.parse(r.data)); // a stale row still counts if it can't be fetched now
-    if (isCurrent(r, r.day, todayKey) && !(refresh && r.day === todayKey)) stale.delete(r.day);
+    // savedFirst (the Mini App): any saved day is used as it is; the cron keeps
+    // them current (the lottery schedule, and yesterday until it's final).
+    if ((savedFirst || isCurrent(r, r.day, todayKey)) && !(refresh && r.day === todayKey)) stale.delete(r.day);
   }
   const { json } = sessionFor(login);
   let error = null;
@@ -345,7 +347,7 @@ const addInto = (sum, row) => { for (const f of MEMBER_FIELDS) sum[f] += num(row
  * the matching members' rows, so everyone/an agent is all its members.
  * Returns { report, send, perDay: [{ day, report, send }], missing, error }.
  */
-export async function subjectTotals(login, who, days, { refresh = false, budgetMs = 12000 } = {}) {
+export async function subjectTotals(login, who, days, { refresh = false, savedFirst = false, budgetMs = 12000 } = {}) {
   let list = await loginAgents(login.id);
   if (!list.length || (who.agentCode && !list.some((a) => a.userCode === who.agentCode))) list = await syncAgents(login);
   const wanted = who.kind === 'all' ? list : list.filter((a) => a.userCode === who.agentCode);
@@ -357,7 +359,7 @@ export async function subjectTotals(login, who, days, { refresh = false, budgetM
   let missing = 0;
   let error = null;
   for (const agent of wanted) {
-    const r = await collectDays(login, agent, days, { refresh, budgetMs: Math.max(1000, budgetMs - (Date.now() - started)) });
+    const r = await collectDays(login, agent, days, { refresh, savedFirst, budgetMs: Math.max(1000, budgetMs - (Date.now() - started)) });
     missing = Math.max(missing, r.missing);
     error ??= r.error;
     for (const [day, { m1, m3 }] of r.days) {
