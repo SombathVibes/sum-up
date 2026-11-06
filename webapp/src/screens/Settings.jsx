@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { call } from '../api.js';
 import { money } from '../format.js';
 import Fold from './Fold.jsx';
+import Activity from './Activity.jsx';
 import Logins from './Logins.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 
@@ -104,6 +105,7 @@ export default function Settings() {
   return (
     <main className="content">
       <Logins />
+      <Activity />
 
       {data.billingMode !== 'manual' && <p className="muted small">⚠️ BILLING_MODE = '{data.billingMode}' — ព័ត៌មានគណនីនេះប្រើតែពេលបង់ដោយដៃ។</p>}
 

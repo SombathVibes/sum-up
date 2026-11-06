@@ -3,7 +3,8 @@
 // and member it follows; plus the logins with their saved agents and members
 // to pick from (no API call).
 
-import { loginsOverview } from '../lib/agents.js';
+import { loginAgents, loginsOverview } from '../lib/agents.js';
+import { autoSendConfig } from '../lib/autosend.js';
 import { dailyConfig } from '../lib/daily.js';
 import { requireGroup } from '../lib/endpoint.js';
 import { getLogin } from '../lib/logins.js';
@@ -16,5 +17,8 @@ export default async function (input, ctx) {
   const config = await dailyConfig(group.id);
   // A group following someone else's login: a manager sees it's on, but can't change it.
   const locked = !!config.loginId && !ownsLogin(as, user, await getLogin(config.loginId));
-  return { config, logins, locked };
+  // 📤 Auto-send: its settings, and the group's login's agents to pick from.
+  const autoSend = await autoSendConfig(group.id);
+  const agents = config.loginId ? (await loginAgents(config.loginId)).map((a) => ({ id: a.id, username: a.username, nickname: a.nickname })) : [];
+  return { config, logins, locked, autoSend: { ...autoSend, setBy: undefined, mine: autoSend.setBy === user.id }, agents };
 }

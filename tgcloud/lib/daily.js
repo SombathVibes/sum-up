@@ -354,7 +354,7 @@ function lotteryTotals(lotteries) {
  * A saved snapshot's final result, for the day-before comparison: its win/lose
  * less 📤 សាង's user share (as the report's top line); null if it has none.
  */
-function snapshotWinLose(row) {
+export function snapshotWinLose(row) {
   if (!row?.ok) return null;
   try {
     const lotteries = lotteriesOf(JSON.parse(row.body));

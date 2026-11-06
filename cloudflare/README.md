@@ -64,6 +64,20 @@ You run these; they use your Cloudflare account and the bot's token.
 - **Locally on Workers:** `npm run cf:dev` (needs a `.dev.vars` with
   `BOT_TOKEN` and `WEBHOOK_SECRET`; it's git-ignored).
 
+## Backups (D1 Time Travel)
+
+D1 keeps every change for 7 days on the free plan (30 on Workers Paid), so the
+whole database can go back to any minute in that window — nothing to set up.
+
+- **Where it is now:** `npx wrangler d1 time-travel info sumup-eu` (prints the
+  current bookmark; note it before a risky change).
+- **Back to a moment:** `npx wrangler d1 time-travel restore sumup-eu --timestamp=2026-11-07T08:30:00+07:00`
+  (or `--bookmark=<one printed above>`). It replaces the database as it was
+  then: everything after it (new payments too) goes, so pick the moment just
+  before the mistake. The restore prints a bookmark to undo it.
+- **A copy to keep:** `npx wrangler d1 export sumup-eu --remote --output backup.sql`
+  (it holds the lottery passwords: keep it private, out of git).
+
 ## Back to Telegram Serverless
 
 Deploy `main` with `npm run deploy` (it sets its own webhook), and export the

@@ -4,11 +4,13 @@ import { loginsOverview } from '../lib/agents.js';
 import { dropLoginFromGroups } from '../lib/daily.js';
 import { requireLogin } from '../lib/endpoint.js';
 import { deleteLogin } from '../lib/logins.js';
+import { logActivity } from '../lib/activity.js';
 
 export default async function (input, ctx) {
   const { user, role, login } = await requireLogin(ctx, input.id);
   const id = login.id;
   await dropLoginFromGroups(id);
   await deleteLogin(id);
+  await logActivity(user, 'login.delete', login.username);
   return { logins: await loginsOverview(role === 'super' ? {} : { ownerId: user.id }) };
 }

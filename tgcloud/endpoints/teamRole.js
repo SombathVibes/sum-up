@@ -5,9 +5,10 @@ import { assignRole } from '../lib/admin.js';
 import { requireSuper } from '../lib/endpoint.js';
 import { getAdmin } from '../lib/roles.js';
 import { getGroup } from '../lib/store.js';
+import { logActivity } from '../lib/activity.js';
 
 export default async function (input, ctx) {
-  await requireSuper(ctx);
+  const user = await requireSuper(ctx);
   const userId = Number(input.userId);
   const role = input.role ?? null;
   if (![null, 'view', 'manage'].includes(role)) throw new EndpointError('Role must be view, manage or none.', { code: 'BAD_ROLE' });
@@ -17,5 +18,6 @@ export default async function (input, ctx) {
   const group = await getGroup(Number(input.groupId));
   if (!group) throw new EndpointError('Unknown group.', { code: 'BAD_GROUP' });
   await assignRole(userId, group, role);
+  await logActivity(user, 'team.role', `${admin.name ?? admin.username ?? userId} · ${group.name ?? group.tgId}`, role ?? 'none');
   return { userId, groupId: group.tgId, role };
 }

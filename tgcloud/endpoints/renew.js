@@ -8,6 +8,7 @@ import { requireGroup } from '../lib/endpoint.js';
 import { paymentSettings } from '../lib/settings.js';
 import { renewSubscription } from '../lib/store.js';
 import { RENEW_MONTHS } from '../lib/ui.js';
+import { logActivity } from '../lib/activity.js';
 
 export default async function (input, ctx) {
   const { user, group } = await requireGroup(ctx, input.groupId, 'manage');
@@ -19,5 +20,6 @@ export default async function (input, ctx) {
   });
   const until = formatKhmerDate(dayOf(sub.endDate));
   await api.sendMessage({ chat_id: group.tgId, text: `✅ ការជាវត្រូវបានបន្ត ដល់ ${until}។ ប្រើ /menu ដើម្បីមើលរបាយការណ៍។` }).catch(() => {});
+  await logActivity(user, 'group.renew', group.name ?? String(group.tgId), `+${months} ខែ → ${until}`);
   return { end: sub.endDate, months, price: sub.price, currency: sub.currency };
 }

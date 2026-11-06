@@ -1,0 +1,4 @@
+-- 📤 Auto-send per group and 📜 the activity log (schema.js groupAutoSend, activity).
+CREATE TABLE IF NOT EXISTS "activity" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "at" INTEGER NOT NULL, "user_id" INTEGER NOT NULL DEFAULT 0, "user_name" TEXT NOT NULL DEFAULT '', "action" TEXT NOT NULL, "target" TEXT NOT NULL DEFAULT '', "detail" TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS "idx_activity_at" ON "activity" ("at");
+CREATE TABLE IF NOT EXISTS "group_auto_send" ("group_id" INTEGER PRIMARY KEY, "enabled" INTEGER NOT NULL DEFAULT 0, "time" TEXT NOT NULL DEFAULT '21:00', "agent_ids" TEXT NOT NULL DEFAULT '[]', "send_image" INTEGER NOT NULL DEFAULT 1, "send_excel" INTEGER NOT NULL DEFAULT 0, "alert_amount" INTEGER NOT NULL DEFAULT 0, "set_by" INTEGER NOT NULL DEFAULT 0, "sent_day" TEXT NOT NULL DEFAULT '', "alerted_day" TEXT NOT NULL DEFAULT '');

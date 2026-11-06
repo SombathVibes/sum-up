@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { call } from '../api.js';
 import { Switch, kh } from './Logins.jsx';
 import Skeleton from '../components/Skeleton.jsx';
+import AutoSend from './AutoSend.jsx';
 
 export default function DailyPanel({ group }) {
   const [data, setData] = useState(null);
@@ -84,6 +85,8 @@ export default function DailyPanel({ group }) {
         {data.logins.length > 0 && !options.length && <p className="muted small">Login មិនទាន់មានបញ្ជីសមាជិក — ចុច «🔄 ពិនិត្យ Login + បញ្ជី» នៅ ⚙️ ការកំណត់។</p>}
         <p className="muted small">🔑 {kh(data.logins.length)} Login · 👤 {kh(options.length)} សមាជិក</p>
       </section>
+
+      {data.config.loginId > 0 && data.autoSend && <AutoSend key={data.config.loginId} group={group} initial={data.autoSend} agents={data.agents ?? []} />}
 
       {error && <p className="error">{error.message}</p>}
       {note && <p className="small">{note}</p>}

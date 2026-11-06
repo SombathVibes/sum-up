@@ -5,6 +5,7 @@ import { EndpointError } from 'sdk';
 import { loginsOverview, memberOptions } from '../lib/agents.js';
 import { requireLogin, requireLogins } from '../lib/endpoint.js';
 import { checkLogin, getLogin, saveLogin, withDefaults } from '../lib/logins.js';
+import { logActivity } from '../lib/activity.js';
 
 export default async function (input, ctx) {
   const { user, role } = await requireLogins(ctx);
@@ -29,5 +30,6 @@ export default async function (input, ctx) {
   } catch (e) {
     check = { ok: false, error: String(e.message ?? e).slice(0, 300) };
   }
+  await logActivity(user, Number(input.id) ? 'login.edit' : 'login.add', values.username, `${values.baseUrl} · ⏰ ${values.times}${check.ok ? '' : ` · ⚠️ ${check.error}`}`);
   return { id, check, logins: await loginsOverview(role === 'super' ? {} : { ownerId: user.id }) };
 }

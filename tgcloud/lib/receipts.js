@@ -17,6 +17,7 @@ import { paymentSettings } from './settings.js';
 import { getGroupById, getSetting, latestSubscription, renewSubscription, setSetting } from './store.js';
 import { getMe } from './telegram.js';
 import { RENEW_MONTHS } from './ui.js';
+import { logActivity } from './activity.js';
 
 /** The first line of the bot's request; a reply to it is a receipt. */
 export const RECEIPT_ASK = '🧾 ផ្ញើវិក្កយបត្រ';
@@ -104,6 +105,7 @@ export async function handleReceiptButton(data, from) {
   let label; // the short form, on every admin's copy
   if (months) {
     const sub = await renewSubscription(group.id, { months, price: priceFor(months, pay), currency: pay.currency, recordedBy: from.id });
+    await logActivity(from, 'group.renew', group.name ?? String(group.tgId), `🧾 +${months} ខែ`);
     const end = dayOf(sub.endDate);
     const until = formatKhmerDate(end);
     result = `✅ បានបន្ត ${months} ខែ (${priceLabel(months, pay)}) ដល់ ${until} · ដោយ ${rec.by}`;

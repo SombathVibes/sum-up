@@ -191,3 +191,36 @@ export const agentDailyTotals = table('agent_daily_totals', {
 }, (t) => ({
   uniq: uniqueIndex('agent_daily_totals_code_day_uniq').on(t.agentCode, t.day),
 }));
+
+// 📤 Auto-send per group (Mini App: the group's 📥 ឆ្នោត tab): at `time` each
+// day (Phnom Penh) the bot posts today's report for the picked agents into
+// the group — the 🖼 album and/or the month's 📊 Excel — and, when
+// alertAmount is set, warns whoever set it (privately) once a day if the
+// group's member's day goes past ± that amount.
+export const groupAutoSend = table('group_auto_send', {
+  groupId:     integer('group_id').primaryKey(),
+  enabled:     boolean('enabled').notNull().default(false),
+  time:        text('time').notNull().default('21:00'), // 'HH:MM'
+  agentIds:    text('agent_ids').notNull().default('[]'), // JSON [agents.id]
+  sendImage:   boolean('send_image').notNull().default(true),
+  sendExcel:   boolean('send_excel').notNull().default(false),
+  alertAmount: integer('alert_amount').notNull().default(0), // ៛; 0 = no alert
+  setBy:       integer('set_by').notNull().default(0), // Telegram user id: gets the alerts
+  sentDay:     text('sent_day').notNull().default(''), // last day sent, so a day goes once
+  alertedDay:  text('alerted_day').notNull().default(''),
+});
+
+// 📜 Who changed what (super admins see it in the Mini App): logins, groups'
+// lottery and auto-send settings, platforms, payment settings, renewals, the
+// team. Kept 90 days.
+export const activity = table('activity', {
+  id:       integer('id').primaryKey({ autoIncrement: true }),
+  at:       integer('at').notNull(), // unix seconds
+  userId:   integer('user_id').notNull().default(0),
+  userName: text('user_name').notNull().default(''),
+  action:   text('action').notNull(), // e.g. 'login.save'
+  target:   text('target').notNull().default(''), // what it was about, readable
+  detail:   text('detail').notNull().default(''),
+}, (t) => ({
+  at: index('idx_activity_at').on(t.at),
+}));

@@ -26,6 +26,9 @@ import { endpoints, handlers } from './generated.js';
 import { collectYesterday } from '../tgcloud/lib/agents.js';
 import { listLogins } from '../tgcloud/lib/logins.js';
 import { runDue } from '../tgcloud/lib/schedule.js';
+import { pruneActivity } from '../tgcloud/lib/activity.js';
+import { alertRunProblems, checkBigDays, remindRenewals } from '../tgcloud/lib/alerts.js';
+import { runAutoSends } from '../tgcloud/lib/autosend.js';
 
 const MAX_AGE = 24 * 3600;
 // Update types the Bot API sends (a handler for anything else never gets called here).
@@ -132,19 +135,29 @@ export default {
 
   async scheduled(event, env, ctx) {
     bindEnv(env);
-    ctx.waitUntil((async () => {
+    // Each job on its own: one failing never stops the others.
+    const job = async (name, fn) => {
       try {
-        const ran = await runDue();
-        for (const { login, reports, totalsError } of ran) {
-          const failed = reports.filter((r) => !r.ok).length;
-          console.log(`${failed || totalsError ? '✗' : '✓'} lottery login ${login.username}: ${reports.length - failed}/${reports.length} reports${totalsError ? ` · totals: ${totalsError}` : ''}`);
-        }
-        const logins = (await listLogins({ secret: true })).filter((l) => l.enabled && l.baseUrl);
-        await collectYesterday(logins);
-        console.log(`✓ scheduled (${event.cron}): ${ran.length} login run(s) due, ${logins.length} enabled login(s)`);
+        return await fn();
       } catch (e) {
-        console.error('✗ scheduled', e?.stack ?? e);
+        console.error(`✗ scheduled ${name}`, e?.stack ?? e);
+        return null;
       }
+    };
+    ctx.waitUntil((async () => {
+      const ran = (await job('lottery runs', runDue)) ?? [];
+      for (const { login, reports, totalsError } of ran) {
+        const failed = reports.filter((r) => !r.ok).length;
+        console.log(`${failed || totalsError ? '✗' : '✓'} lottery login ${login.username}: ${reports.length - failed}/${reports.length} reports${totalsError ? ` · totals: ${totalsError}` : ''}`);
+      }
+      await job('login alerts', () => alertRunProblems(ran));
+      await job('big-day alerts', checkBigDays);
+      const sent = await job('auto-send', runAutoSends);
+      await job('renew reminders', remindRenewals);
+      await job('yesterday', async () => collectYesterday((await listLogins({ secret: true })).filter((l) => l.enabled && l.baseUrl)));
+      // Once a day is plenty: just after midnight.
+      if (new Date(event.scheduledTime + 7 * 3600 * 1000).toISOString().slice(11, 16) === '00:05') await job('activity prune', pruneActivity);
+      console.log(`✓ scheduled (${event.cron}): ${ran.length} login run(s), ${sent ?? 0} auto-send(s)`);
     })());
   },
 };

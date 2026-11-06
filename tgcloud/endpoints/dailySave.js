@@ -7,6 +7,7 @@ import { checkDaily, dailyConfig, saveDailyConfig } from '../lib/daily.js';
 import { requireGroup } from '../lib/endpoint.js';
 import { getLogin } from '../lib/logins.js';
 import { ownsLogin } from '../lib/roles.js';
+import { logActivity } from '../lib/activity.js';
 
 export default async function (input, ctx) {
   const { user, group, role } = await requireGroup(ctx, input.groupId, 'manage');
@@ -25,5 +26,6 @@ export default async function (input, ctx) {
     if (e.field) throw new EndpointError(`Check the ${e.field} field.`, { code: 'BAD_FIELD', field: e.field });
     throw e;
   }
+  await logActivity(user, 'group.lottery', group.name ?? String(group.tgId), values.enabled ? `ON · 👤 ${values.memberName || values.memberCode}` : 'OFF');
   return { config: await dailyConfig(group.id) };
 }

@@ -3,6 +3,8 @@ import h_callback_query from '../tgcloud/handlers/callback_query.js';
 import h_message from '../tgcloud/handlers/message.js';
 import h_pre_checkout_query from '../tgcloud/handlers/pre_checkout_query.js';
 import h_subscription from '../tgcloud/handlers/subscription.js';
+import e_activity from '../tgcloud/endpoints/activity.js';
+import e_autoSendSave from '../tgcloud/endpoints/autoSendSave.js';
 import e_dailyGet from '../tgcloud/endpoints/dailyGet.js';
 import e_dailySave from '../tgcloud/endpoints/dailySave.js';
 import e_groupHistory from '../tgcloud/endpoints/groupHistory.js';
@@ -30,4 +32,4 @@ import e_teamSuper from '../tgcloud/endpoints/teamSuper.js';
 import e_uploadFile from '../tgcloud/endpoints/uploadFile.js';
 
 export const handlers = { "callback_query": h_callback_query, "message": h_message, "pre_checkout_query": h_pre_checkout_query, "subscription": h_subscription };
-export const endpoints = { "dailyGet": e_dailyGet, "dailySave": e_dailySave, "groupHistory": e_groupHistory, "groupLottery": e_groupLottery, "groupPayments": e_groupPayments, "groupReport": e_groupReport, "groups": e_groups, "lifetime": e_lifetime, "loginDefaults": e_loginDefaults, "loginDelete": e_loginDelete, "loginLinks": e_loginLinks, "loginRun": e_loginRun, "loginSave": e_loginSave, "loginSync": e_loginSync, "logins": e_logins, "me": e_me, "renew": e_renew, "sendCsv": e_sendCsv, "settings": e_settings, "settingsSave": e_settingsSave, "team": e_team, "teamRemove": e_teamRemove, "teamRole": e_teamRole, "teamSuper": e_teamSuper, "uploadFile": e_uploadFile };
+export const endpoints = { "activity": e_activity, "autoSendSave": e_autoSendSave, "dailyGet": e_dailyGet, "dailySave": e_dailySave, "groupHistory": e_groupHistory, "groupLottery": e_groupLottery, "groupPayments": e_groupPayments, "groupReport": e_groupReport, "groups": e_groups, "lifetime": e_lifetime, "loginDefaults": e_loginDefaults, "loginDelete": e_loginDelete, "loginLinks": e_loginLinks, "loginRun": e_loginRun, "loginSave": e_loginSave, "loginSync": e_loginSync, "logins": e_logins, "me": e_me, "renew": e_renew, "sendCsv": e_sendCsv, "settings": e_settings, "settingsSave": e_settingsSave, "team": e_team, "teamRemove": e_teamRemove, "teamRole": e_teamRole, "teamSuper": e_teamSuper, "uploadFile": e_uploadFile };

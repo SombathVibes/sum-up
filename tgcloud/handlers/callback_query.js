@@ -66,6 +66,7 @@ import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
 import { canManage, canView, isSuper, loginRole, managersOf, ownsLogin, roleIn } from '../lib/roles.js';
 import { askForReceipt, handleReceiptButton } from '../lib/receipts.js';
+import { logActivity } from '../lib/activity.js';
 import {
   RENEW_MONTHS, bankDayPicker, bankPeriodPicker, bankTypePicker, calendarMenu, menuKeyboard, menuText, parseView, renewMenu, reportKeyboard,
   syncMenu, yearCalendarMenu,
@@ -585,6 +586,7 @@ async function handleSync(data, chat, show, admin, role) {
       recordedBy: admin.id,
     });
     const until = formatKhmerDate(dayOf(sub.endDate));
+    await logActivity(admin, 'group.renew', name, `+${months} ខែ → ${until}`);
     await show(`✅ Recorded ${priceLabel(months, pay)} for ${months} month(s).\n"${name}" is active until ${until}.`, {
       reply_markup: { inline_keyboard: [[{ text: '🧾 History', callback_data: 'HISTORY' }, { text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'SYNC_MENU' }]] },
     });

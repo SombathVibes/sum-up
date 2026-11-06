@@ -3,6 +3,7 @@
 import { EndpointError } from 'sdk';
 import { requireSuper } from '../lib/endpoint.js';
 import { getAdmin, isConfigSuper, setSuper } from '../lib/roles.js';
+import { logActivity } from '../lib/activity.js';
 
 export default async function (input, ctx) {
   const me = await requireSuper(ctx);
@@ -12,5 +13,6 @@ export default async function (input, ctx) {
   if (isConfigSuper(userId)) throw new EndpointError('This super admin is set in config.js.', { code: 'CONFIG' });
   if (userId === me.id) throw new EndpointError('You can’t change your own super admin status.', { code: 'SELF' });
   await setSuper(userId, !!input.on);
+  await logActivity(me, 'team.super', admin.name ?? admin.username ?? String(userId), input.on ? 'ON' : 'OFF');
   return { userId, isSuper: !!input.on };
 }
