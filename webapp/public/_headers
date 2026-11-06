@@ -1,0 +1,6 @@
+# Cloudflare static assets (branch cloudflare): the built files' names change
+# with every build (index-<hash>.js), so phones keep them for a year instead of
+# asking again on every open. index.html isn't listed: it's always checked,
+# so a new build shows on the next open.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
