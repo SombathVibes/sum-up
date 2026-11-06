@@ -64,7 +64,7 @@ import { imageDayPicker, imageKeyboard } from '../lib/sheetimage.js';
 import { totalsPicker, totalsScreen } from '../lib/totals.js';
 import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
-import { canManage, canView, isSuper, managersOf, roleIn } from '../lib/roles.js';
+import { canManage, canView, isSuper, loginRole, managersOf, ownsLogin, roleIn } from '../lib/roles.js';
 import { askForReceipt, handleReceiptButton } from '../lib/receipts.js';
 import {
   RENEW_MONTHS, bankDayPicker, bankPeriodPicker, bankTypePicker, calendarMenu, menuKeyboard, menuText, parseView, renewMenu, reportKeyboard,
@@ -225,11 +225,13 @@ async function handle(query) {
       // LOTTO picks a login when there are more than one, then L<id>:… shows
       // its screens, with 🔀 for everyone under it, each agent and member.
       if (data === 'LOTTO' || loginScope) {
-        if (!superAdmin) return refuse('You are not admin 😡');
+        // Super admins: every login; managers: the logins they added.
+        const lottoRole = superAdmin ? 'super' : await loginRole(query.from);
+        if (!lottoRole) return refuse('You are not admin 😡');
         const refresh = data.endsWith('!');
         await answer({ callback_query_id: query.id, text: refresh ? '🔄' : undefined });
         if (data === 'LOTTO') {
-          const logins = (await listLogins()).filter((l) => l.baseUrl);
+          const logins = (await listLogins()).filter((l) => l.baseUrl && ownsLogin(lottoRole, query.from, l));
           if (logins.length !== 1) {
             return show(logins.length ? '📥 <b>របាយការណ៍ឆ្នោត</b>\nជ្រើសរើស Login:' : '📥 មិនទាន់មាន Login ឆ្នោតទេ — បន្ថែមនៅ Mini App ⚙️។', {
               parse_mode: 'HTML',
@@ -240,7 +242,7 @@ async function handle(query) {
         }
         const key = refresh ? data.slice(0, -1) : data;
         const login = await getLogin(loginScope, { secret: true });
-        if (!login || key === 'BACK' || !LOTTERY_KEY.test(key)) {
+        if (!login || !ownsLogin(lottoRole, query.from, login) || key === 'BACK' || !LOTTERY_KEY.test(key)) {
           loginScope = null;
           return showScreen(await adminPanel(query.from));
         }
@@ -316,6 +318,8 @@ async function handle(query) {
     if (key === 'XL' || key === 'XLSYNC' || /^XL[AMXID]_/.test(key)) {
       const cfg = await dailyConfig(group.id);
       const login = cfg.loginId ? await getLogin(cfg.loginId, { secret: true }) : null;
+      // Super admins: any login; managers: only the logins they added.
+      if (login && !ownsLogin(role === 'super' ? 'super' : await loginRole(query.from), query.from, login)) return refuse('🔒 Login នេះជារបស់អ្នកគ្រប់គ្រងផ្សេង។');
       if (!login) return show('⚠️ ក្រុមនេះមិនទាន់មាន Login ឆ្នោតទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
       if (key === 'XL' || key === 'XLSYNC') return showScreen(await agentListScreen(login, { refresh: key === 'XLSYNC' }));
       const [, kind, id, month, day] = /^XL([AMXID])_(\d+)(?:_(\d{4}-\d\d)(?:-(\d\d))?)?$/.exec(key) ?? [];
@@ -387,8 +391,11 @@ async function handle(query) {
       // Menus are built for whoever tapped, so only admins see the Sync row.
       case 'BACK': {
         const [status, cfg, title] = await Promise.all([accessStatus(group), dailyConfig(group.id), scopedId ? groupTitle(group) : null]);
-        // 📊 Excel ភ្នាក់ងារ only in the private panel, for groups that follow a login.
-        const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled && !!cfg.memberCode, !!scopedId && !!cfg.loginId);
+        // 📊 Excel / 🖼 only in the private panel, for groups that follow a login
+        // this admin may use (super admins: any; managers: their own).
+        const excel = !!scopedId && !!cfg.loginId
+          && ownsLogin(role === 'super' ? 'super' : await loginRole(query.from), query.from, await getLogin(cfg.loginId));
+        const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled && !!cfg.memberCode, excel);
         // In the private panel: the group's name on top, and a way back to all groups.
         if (scopedId) {
           return show(`${title}\n${menuText(status)}`, {

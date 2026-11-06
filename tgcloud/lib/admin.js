@@ -8,9 +8,9 @@ import { accessStatus } from './billing.js';
 import { MINIAPP_URL } from './config.js';
 import { dayOf, pad2 } from './dates.js';
 import {
-  getAdmin, isConfigSuper, isSuper, listAdmins, managersOf, removeAdmin, rolesOf, setGroupRole, setSuper,
-  syncConfigSupers, visibleGroups,
+  getAdmin, isConfigSuper, isSuper, listAdmins, loginRole, managersOf, ownsLogin, removeAdmin, rolesOf, setGroupRole, setSuper, syncConfigSupers, visibleGroups,
 } from './roles.js';
+import { listLogins } from './logins.js';
 import { listGroups } from './store.js';
 import { clearCommands, setCommands } from './telegram.js';
 
@@ -83,8 +83,10 @@ export async function adminPanel(user, page = 0) {
   const keyboard = items.map((r) => [groupButton(r)]);
   keyboard.push(...pagerRow(p, pages, (n) => `ADMIN_P_${n}`));
   if (urgent.length) keyboard.push([btn(`⚠️ ផុតកំណត់ (${urgent.length})`, 'ADMIN_URG_0')]);
-  // 📥 the lottery report for anyone under a login, not tied to a group.
-  if (superAdmin) keyboard.push([btn('📥 របាយការណ៍ឆ្នោត', 'LOTTO')]);
+  // 📥 the lottery report for anyone under a login, not tied to a group:
+  // super admins (every login), managers (the logins they added).
+  const lottoRole = superAdmin ? 'super' : await loginRole(user);
+  if (superAdmin || (lottoRole && (await listLogins()).some((l) => l.baseUrl && ownsLogin(lottoRole, user, l)))) keyboard.push([btn('📥 របាយការណ៍ឆ្នោត', 'LOTTO')]);
   if (superAdmin) keyboard.push([btn('👥 អ្នកគ្រប់គ្រង', 'TEAM')]);
   // The admin Mini App (webapp/), once its address is in config.
   if (MINIAPP_URL) keyboard.push([{ text: '🖥 Admin app', web_app: { url: MINIAPP_URL } }]);

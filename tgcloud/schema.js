@@ -121,6 +121,9 @@ export const lotteryLogins = table('lottery_logins', {
   // The last scheduled run: its day and time slot, so a time isn't run twice.
   ranDay:     text('ran_day').notNull().default(''),
   ranSlot:    text('ran_slot').notNull().default(''),
+  // Who added it: a 🛠 manager sees and uses only their own logins; 0 = a super
+  // admin's (super admins see every login).
+  ownerId:    integer('owner_id').notNull().default(0),
 });
 
 // A group's lottery report (super admins switch it on): which login and which

@@ -321,9 +321,10 @@ export async function memberOptions(login) {
  * Every login for the Mini App (no secrets), with the agents and members saved
  * under it (no API call) and how many enabled groups follow it.
  */
-export async function loginsOverview() {
+export async function loginsOverview({ ownerId = null } = {}) {
   const out = [];
-  for (const login of await listLogins()) {
+  // ownerId: a manager's own logins only (null: all, for super admins).
+  for (const login of (await listLogins()).filter((l) => ownerId === null || l.ownerId === ownerId)) {
     const people = (await loginAgents(login.id)).map((a) => {
       let members = [];
       try { members = JSON.parse(a.members || '[]'); } catch { /* none */ }

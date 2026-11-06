@@ -101,3 +101,17 @@ export async function managersOf(groupId) {
     .all();
   return rows.map((r) => r.userId);
 }
+
+/**
+ * Lottery logins: 'super' (every login), 'manager' (an admin with 🛠 manage in
+ * at least one group: the logins they added), or null.
+ */
+export async function loginRole(user) {
+  if (!user) return null;
+  if (await isSuper(user)) return 'super';
+  for (const role of (await rolesOf(user.id)).values()) if (role === 'manage') return 'manager';
+  return null;
+}
+
+/** May this user (with their loginRole) use this login? */
+export const ownsLogin = (role, user, login) => !!login && (role === 'super' || (role === 'manager' && login.ownerId === user.id));

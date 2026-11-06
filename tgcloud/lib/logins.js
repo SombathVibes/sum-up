@@ -51,6 +51,7 @@ function toLogin(r, secret) {
     times: parseTimes(r.times),
     ranDay: r.ranDay ?? '',
     ranSlot: r.ranSlot ?? '',
+    ownerId: r.ownerId ?? 0,
   };
   if (secret) Object.assign(login, { password: r.password ?? '', token: r.token ?? '' });
   return login;
@@ -90,15 +91,18 @@ export function checkLogin(input) {
   return { values };
 }
 
-/** Saves a login (id: update; none: new). New settings may mean a new login, so the token is dropped. Returns its id. */
-export async function saveLogin(id, values) {
+/**
+ * Saves a login (id: update; none: new, owned by `ownerId`). New settings may
+ * mean a new login, so the token is dropped. Returns its id.
+ */
+export async function saveLogin(id, values, { ownerId = 0 } = {}) {
   const saved = id ? await getLogin(id) : null;
   if (id && !saved) throw Object.assign(new Error('login'), { field: 'login' });
   if (!('password' in values) && !saved?.hasPassword) throw Object.assign(new Error('password'), { field: 'password' });
   const row = { ...values, token: '' };
   let loginId = saved?.id;
   if (saved) await db.update(lotteryLogins).set(row).where(eq(lotteryLogins.id, saved.id)).run();
-  else [{ id: loginId }] = await db.insert(lotteryLogins).values(row).returning().run();
+  else [{ id: loginId }] = await db.insert(lotteryLogins).values({ ...row, ownerId }).returning().run();
   await pushSchedule();
   return loginId;
 }

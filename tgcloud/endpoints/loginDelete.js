@@ -1,14 +1,14 @@
-// Deletes a lottery login (super admins); groups that followed it are switched off.
+// Deletes a lottery login (super admins; managers: their own); groups that followed it are switched off.
 
 import { loginsOverview } from '../lib/agents.js';
 import { dropLoginFromGroups } from '../lib/daily.js';
-import { requireSuper } from '../lib/endpoint.js';
+import { requireLogin } from '../lib/endpoint.js';
 import { deleteLogin } from '../lib/logins.js';
 
 export default async function (input, ctx) {
-  await requireSuper(ctx);
-  const id = Number(input.id);
+  const { user, role, login } = await requireLogin(ctx, input.id);
+  const id = login.id;
   await dropLoginFromGroups(id);
   await deleteLogin(id);
-  return { logins: await loginsOverview() };
+  return { logins: await loginsOverview(role === 'super' ? {} : { ownerId: user.id }) };
 }

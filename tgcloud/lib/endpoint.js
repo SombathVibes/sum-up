@@ -4,7 +4,8 @@
 
 import { EndpointError } from 'sdk';
 import { dayKey, parseDayKey, startOf } from './dates.js';
-import { canManage, canView, isSuper, roleIn, visibleGroups } from './roles.js';
+import { canManage, canView, isSuper, loginRole, ownsLogin, roleIn, visibleGroups } from './roles.js';
+import { getLogin } from './logins.js';
 import { getGroup } from './store.js';
 
 const MAX_DAYS = 366;
@@ -53,4 +54,20 @@ export function parseRange(from, to) {
   if (end < start) throw new EndpointError('The end date is before the start date.', { code: 'BAD_RANGE' });
   if ((end - start) / 86400 > MAX_DAYS) throw new EndpointError(`Pick ${MAX_DAYS} days or fewer.`, { code: 'BAD_RANGE' });
   return { start, end, from: dayKey(a), to: dayKey(b) };
+}
+
+/** Lottery logins: super admins (all) and managers (their own). { user, role }. */
+export async function requireLogins(ctx) {
+  const user = caller(ctx);
+  const role = await loginRole(user);
+  if (!role) throw new EndpointError('Only super admins and managers can set up lottery logins.', { code: 'FORBIDDEN' });
+  return { user, role };
+}
+
+/** One login this user may use (with the password, for calling the API). { user, role, login }. */
+export async function requireLogin(ctx, id) {
+  const { user, role } = await requireLogins(ctx);
+  const login = await getLogin(Number(id), { secret: true });
+  if (!ownsLogin(role, user, login)) throw new EndpointError('Unknown login.', { code: 'BAD_LOGIN' });
+  return { user, role, login };
 }

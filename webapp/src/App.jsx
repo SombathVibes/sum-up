@@ -8,6 +8,7 @@ import { call } from './api.js';
 import Billing from './screens/Billing.jsx';
 import Group from './screens/Group.jsx';
 import Groups from './screens/Groups.jsx';
+import Logins from './screens/Logins.jsx';
 import Settings from './screens/Settings.jsx';
 import Team from './screens/Team.jsx';
 import { GroupCardSkeleton } from './components/Skeleton.jsx';
@@ -67,17 +68,15 @@ export default function App() {
       {tab === 'billing' && <Billing groups={groups} onOpen={(tgId) => setOpen({ tgId, view: 'billing' })} />}
       {tab === 'team' && me?.superAdmin && <Team me={me} />}
       {tab === 'settings' && me?.superAdmin && <Settings />}
+      {/* Managers: only their own 🔑 lottery logins (no payment, QR or template). */}
+      {tab === 'settings' && !me?.superAdmin && me?.canLogins && <main className="content"><Logins /></main>}
       <nav className="tabs">
         <button className={tab === 'groups' ? 'on' : ''} onClick={() => setTab('groups')}>🏪 ក្រុម</button>
         <button className={tab === 'billing' ? 'on' : ''} onClick={() => setTab('billing')}>
           ⭐ ការជាវ{(() => { const n = groups.filter((g) => !g.status || (g.status.kind !== 'lifetime' && g.status.daysLeft <= 10)).length; return n ? <span className="dot">{n}</span> : null; })()}
         </button>
-        {me?.superAdmin && (
-          <>
-            <button className={tab === 'team' ? 'on' : ''} onClick={() => setTab('team')}>👥 ក្រុមការងារ</button>
-            <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}>⚙️ ការកំណត់</button>
-          </>
-        )}
+        {me?.superAdmin && <button className={tab === 'team' ? 'on' : ''} onClick={() => setTab('team')}>👥 ក្រុមការងារ</button>}
+        {(me?.superAdmin || me?.canLogins) && <button className={tab === 'settings' ? 'on' : ''} onClick={() => setTab('settings')}>{me?.superAdmin ? '⚙️ ការកំណត់' : '🔑 Login'}</button>}
       </nav>
     </div>
   );
