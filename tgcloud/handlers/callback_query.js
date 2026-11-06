@@ -1,7 +1,7 @@
 // Button presses from the /menu and /sync keyboards, in groups and in a bot
 // admin's private-chat panel.
 
-import { api, BotApiError, InputFile } from 'sdk';
+import { api, BotApiError, InputFile, renderImage } from 'sdk';
 
 // Telegram rejects answers to taps it considers too old (e.g. made while the
 // bot was restarting); the tap's work still goes ahead.
@@ -41,7 +41,8 @@ import { accessStatus, offerLabel, priceFor, priceLabel, subscriptionScreen } fr
 import { TERMS_TEXT, WHITELIST_BOTS } from '../lib/config.js';
 import { dailyConfig, dayPicker, dayReportScreen, groupSubject, savedAgents, subjectOf, subjectPicker, tokenSubject, typePicker } from '../lib/daily.js';
 import { getLogin, listLogins } from '../lib/logins.js';
-import { agentListScreen, getAgent, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
+import { agentChoiceScreen, agentDayImage, agentListScreen, getAgent, imageDays, monthScreen, sendAgentExcel, syncAgents } from '../lib/agents.js';
+import { imageDayPicker, imageKeyboard } from '../lib/sheetimage.js';
 import { totalsPicker, totalsScreen } from '../lib/totals.js';
 import { paymentSettings } from '../lib/settings.js';
 import { deleteQuietly, edit, groupTitle, sendScreen, setCommands } from '../lib/telegram.js';
@@ -248,7 +249,7 @@ async function handle(query) {
     }
 
     // 📊 Agent Excel: only in the private admin panel (where canView was checked above).
-    if (/^XL(SYNC|[AM]_|$)/.test(data) && !scopedId) return refuse('ប្រើក្នុង chat ផ្ទាល់ជាមួយ bot 🔒');
+    if (/^XL(SYNC|[AMXID]_|$)/.test(data) && !scopedId) return refuse('ប្រើក្នុង chat ផ្ទាល់ជាមួយ bot 🔒');
 
     // A trailing '!' is the report's Refresh button: catch up through the sync
     // helper first (payments missed while the bot was down), then redraw.
@@ -294,15 +295,55 @@ async function handle(query) {
     // 📊 Agent Excel (private admin panel only, checked above): XL lists the agents
     // under the group's login, XLSYNC refreshes them, XLA_<id> picks a month,
     // XLM_<id>_<YYYY-MM> builds it and sends it to that private chat.
-    if (key === 'XL' || key === 'XLSYNC' || key.startsWith('XLA_') || key.startsWith('XLM_')) {
+    if (key === 'XL' || key === 'XLSYNC' || /^XL[AMXID]_/.test(key)) {
       const cfg = await dailyConfig(group.id);
       const login = cfg.loginId ? await getLogin(cfg.loginId, { secret: true }) : null;
       if (!login) return show('⚠️ ក្រុមនេះមិនទាន់មាន Login ឆ្នោតទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
       if (key === 'XL' || key === 'XLSYNC') return showScreen(await agentListScreen(login, { refresh: key === 'XLSYNC' }));
-      const [, id, month] = /^XL[AM]_(\d+)(?:_(\d{4}-\d\d))?$/.exec(key) ?? [];
+      const [, kind, id, month, day] = /^XL([AMXID])_(\d+)(?:_(\d{4}-\d\d)(?:-(\d\d))?)?$/.exec(key) ?? [];
       const agent = id && (await getAgent(Number(id)));
       if (!agent || agent.loginId !== login.id) return showScreen(await agentListScreen(login));
-      if (key.startsWith('XLA_') || !month) return showScreen(monthScreen(agent));
+      if (kind === 'A') return showScreen(agentChoiceScreen(agent));
+      if (kind === 'X' || (kind === 'M' && !month)) return showScreen(monthScreen(agent));
+      // 🖼 a day as the Excel's day tab (today unless one is picked); 📅 XLD_ picks the day.
+      const span = imageDays();
+      if (kind === 'D') return showScreen(imageDayPicker(agent, month && month >= span.first.slice(0, 7) ? month : span.today.slice(0, 7), span));
+      if (kind === 'I') {
+        let wanted = month && day ? `${month}-${day}` : span.today;
+        if (wanted < span.first || wanted > span.today) wanted = span.today;
+        const markup = scope(imageKeyboard(agent.id, wanted, span));
+        // The ⏳ goes where the old screen was: a caption on a photo, else the text.
+        if (msg.photo) await api.editMessageCaption({ chat_id: chatId, message_id: messageId, caption: '⏳ កំពុងរៀបចំរូបភាព…' }).catch(() => {});
+        else await show('⏳ កំពុងរៀបចំរូបភាព…');
+        try {
+          const img = await agentDayImage(login, agent, wanted, renderImage, { refresh });
+          if (img.text) return show(img.text, { reply_markup: imageKeyboard(agent.id, wanted, span) });
+          const photo = img.fileId ?? new InputFile(img.bytes, `${agent.username}-${wanted}.png`, { type: 'image/png' });
+          let sent;
+          if (msg.photo) {
+            // The same message turns into the other day: no new message per tap.
+            sent = await api.editMessageMedia({
+              chat_id: chatId,
+              message_id: messageId,
+              media: { type: 'photo', media: img.fileId ?? 'attach://image', caption: img.caption },
+              ...(img.fileId ? {} : { image: photo }),
+              reply_markup: markup,
+            });
+          } else {
+            await deleteQuietly(chatId, messageId);
+            sent = await api.sendPhoto({ chat_id: chatId, photo, caption: img.caption, reply_markup: markup });
+          }
+          const fileId = sent?.photo?.at(-1)?.file_id;
+          if (!img.fileId && fileId) await img.remember(fileId);
+          return undefined;
+        } catch (e) {
+          if (e instanceof BotApiError && e.description?.includes('message is not modified')) return undefined;
+          console.error('agent image failed', e);
+          const text = `⚠️ ${String(e.message ?? e).slice(0, 300)}`;
+          if (msg.photo) return api.editMessageCaption({ chat_id: chatId, message_id: messageId, caption: text, reply_markup: markup }).catch(() => {});
+          return show(text, { reply_markup: imageKeyboard(agent.id, wanted, span) });
+        }
+      }
       await show(`⏳ កំពុងរៀបចំ Excel ${agent.username} · ${month}…`);
       try {
         return showScreen(await sendAgentExcel(login, agent, month, query.from.id, api, InputFile, isPrivate));

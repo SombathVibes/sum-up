@@ -18,11 +18,13 @@ export function takeStats() {
 
 let botToken = '';
 let apiBase = 'https://api.telegram.org';
+let browser = null;
 
 /** The Worker's env for this request: BOT_TOKEN (secret), DB (D1), and TELEGRAM_API for tests. */
 export function bindEnv(env) {
   botToken = env.BOT_TOKEN ?? '';
   apiBase = env.TELEGRAM_API || 'https://api.telegram.org';
+  browser = env.BROWSER ?? null;
   // A D1 session per request: with read replication on, its reads go to the
   // nearest copy (the webhook runs near Telegram, in Europe; the Mini App near
   // its users) and writes to the primary, in order within the request. With
@@ -102,5 +104,32 @@ export class EndpointError extends Error {
   constructor(description, parameters) {
     super(description);
     this.parameters = parameters;
+  }
+}
+
+/**
+ * A PNG of an HTML page (Cloudflare Browser Rendering's screenshot, via the
+ * BROWSER binding): `selector` is the element captured, `width` the page width.
+ * The free plan takes one every 10 seconds, so a refusal is retried a couple
+ * of times.
+ */
+export async function renderImage(html, { width = 1200, selector } = {}) {
+  if (!browser?.quickAction) throw new Error('Image rendering isn’t set up (the BROWSER binding in wrangler.jsonc).');
+  for (let attempt = 0; ; attempt++) {
+    const res = await browser.quickAction('screenshot', {
+      html,
+      viewport: { width, height: 900, deviceScaleFactor: 2 },
+      // A selector captures just that element (it can't be combined with fullPage).
+      screenshotOptions: selector ? { type: 'png' } : { type: 'png', fullPage: true },
+      gotoOptions: { waitUntil: 'networkidle0', timeout: 20000 },
+      ...(selector ? { selector } : {}),
+    });
+    if (res.ok) return new Uint8Array(await res.arrayBuffer());
+    const text = await res.text().catch(() => '');
+    if (res.status === 429 && attempt < 2) {
+      await new Promise((r) => setTimeout(r, 5000));
+      continue;
+    }
+    throw new Error(`screenshot: HTTP ${res.status} ${text.slice(0, 200)}`);
   }
 }

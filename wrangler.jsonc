@@ -36,6 +36,9 @@
   // App from Asia then makes one long trip per request instead of one per query
   // (in Phnom Penh, a group list took 8 s). Smart Placement never moved it.
   "placement": { "region": "azure:westeurope" },
+  // 🖼 the agent day images: Cloudflare's headless browser screenshots the page
+  // (lib/sheetimage.js). Free plan: 10 browser-minutes a day, one every 10 s.
+  "browser": { "binding": "BROWSER" },
   // Every minute: the lottery logins' schedule and yesterday's agent days.
   "triggers": { "crons": ["* * * * *"] },
   "observability": { "enabled": true }

@@ -20,6 +20,7 @@ import { addDays, dayKey, now, parseDayKey, startOf, today } from './dates.js';
 import { groupsOfLogin } from './daily.js';
 import { listLogins, openSession } from './logins.js';
 import { getSetting, setSetting } from './store.js';
+import { sheetHtml, sheetValues } from './sheetimage.js';
 import { Book, getNum, hasValue, put, putFormulaIfEmpty, serial } from './xlsx.js';
 
 /** Day-tab row → lotteryType in the API (MHSB = LEAP, MC = VN1, MT = VN2, TC = TN). */
@@ -533,13 +534,60 @@ export async function agentListScreen(login, { refresh = false } = {}) {
   const rows = list.map((a) => [btn(`👤 ${a.username}`, `XLA_${a.id}`)]);
   rows.push([btn('🔄 ទាញបញ្ជីថ្មី', 'XLSYNC'), btn('⬅️ ត្រឡប់ក្រោយ', 'BACK')]);
   return {
-    text: `<b>📊 Excel ភ្នាក់ងារ</b>\n${list.length ? 'ជ្រើសរើសភ្នាក់ងារ:' : 'មិនមានភ្នាក់ងារ។'}${note}`,
+    text: `<b>📊 Excel / 🖼 រូបភាព ភ្នាក់ងារ</b>\n${list.length ? 'ជ្រើសរើសភ្នាក់ងារ:' : 'មិនមានភ្នាក់ងារ។'}${note}`,
     parse_mode: 'HTML',
     reply_markup: { inline_keyboard: rows },
   };
 }
 
-/** XLA_<id>: this month and the two before. */
+/** XLA_<id>: 📄 the month's Excel, or 🖼 a day as an image. */
+export function agentChoiceScreen(agent) {
+  return {
+    text: `<b>📊 ${agent.username}</b>${agent.nickname ? ` · ${agent.nickname}` : ''}\nជ្រើសរើស:`,
+    parse_mode: 'HTML',
+    reply_markup: {
+      inline_keyboard: [
+        [btn('📄 Excel', `XLX_${agent.id}`), btn('🖼 រូបភាព', `XLI_${agent.id}`)],
+        [btn('⬅️ ត្រឡប់ក្រោយ', 'XL')],
+      ],
+    },
+  };
+}
+
+/** The days the 🖼 image can show: from the first of the month two months back, to today. */
+export function imageDays() {
+  const { y, m } = today();
+  return { first: new Date(Date.UTC(y, m - 3, 1)).toISOString().slice(0, 10), today: dayKey(today()) };
+}
+
+/**
+ * 🖼 one agent's day as the template's day tab: { bytes } (a new PNG; save
+ * its Telegram file_id with `remember`) or { fileId } (the same image as
+ * last time), with `caption`; or { text } while days are still being fetched.
+ * `refresh`: today is fetched again.
+ */
+export async function agentDayImage(login, agent, day, renderImage, { refresh = false } = {}) {
+  const r = await collectDays(login, agent, monthDays(day.slice(0, 7)).filter((d) => d <= day), { refresh });
+  if (r.missing) {
+    const why = r.error ? `\n⚠️ ${r.error.slice(0, 200)}` : '';
+    return { text: `⏳ បានទាញ ${r.total - r.missing}/${r.total} ថ្ងៃ — ចុច «🔄 ទាញថ្មី» ដើម្បីបន្ត។${why}` };
+  }
+  const values = sheetValues(agent, day, r.days);
+  const caption = `🖼 ${agent.username} · ${day.split('-').reverse().join('/')}`;
+  const key = `img:${agent.id}:${day}`;
+  const sig = await workbookSig(['v1', values]);
+  let saved = null;
+  try {
+    saved = JSON.parse((await getSetting(key)) ?? 'null');
+  } catch {
+    // broken: draw it again
+  }
+  const remember = (fileId) => setSetting(key, JSON.stringify({ sig, fileId }));
+  if (saved?.sig === sig && saved.fileId) return { fileId: saved.fileId, caption, remember };
+  return { bytes: await renderImage(sheetHtml(values), { width: 1180, selector: '#sheet' }), caption, remember };
+}
+
+/** XLX_<id>: this month and the two before. */
 export function monthScreen(agent) {
   const { y, m } = today();
   const months = [0, 1, 2].map((i) => new Date(Date.UTC(y, m - 1 - i, 1)).toISOString().slice(0, 7));
@@ -549,7 +597,7 @@ export function monthScreen(agent) {
     reply_markup: {
       inline_keyboard: [
         ...months.map((mo) => [btn(`📅 ${monthLabel(mo)}`, `XLM_${agent.id}_${mo}`)]),
-        [btn('⬅️ ត្រឡប់ក្រោយ', 'XL')],
+        [btn('⬅️ ត្រឡប់ក្រោយ', `XLA_${agent.id}`)],
       ],
     },
   };
@@ -578,7 +626,7 @@ async function workbookSig(parts) {
 }
 
 export async function sendAgentExcel(login, agent, month, chatId, api, InputFile, isPrivate = true) {
-  const back = { inline_keyboard: [[btn('🔄 ម្ដងទៀត', `XLM_${agent.id}_${month}`)], [btn('⬅️ ត្រឡប់ក្រោយ', `XLA_${agent.id}`)]] };
+  const back = { inline_keyboard: [[btn('🔄 ម្ដងទៀត', `XLM_${agent.id}_${month}`)], [btn('⬅️ ត្រឡប់ក្រោយ', `XLX_${agent.id}`)]] };
   const fileId = await templateFileId();
   if (!fileId) return { text: '⚠️ មិនទាន់មាន template ទេ។ Super admin ផ្ញើ template.xlsx ជាមួយ caption /settemplate ក្នុង chat ជាមួយ bot។', reply_markup: back };
   const r = await collectMonth(login, agent, month);

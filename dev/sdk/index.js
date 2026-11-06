@@ -67,3 +67,8 @@ export class EndpointError extends Error {
     this.parameters = parameters;
   }
 }
+
+/** On Cloudflare, Browser Rendering's screenshot (cloudflare/sdk); not available locally. */
+export async function renderImage() {
+  throw new Error('Images are made on Cloudflare only (Browser Rendering).');
+}

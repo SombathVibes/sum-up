@@ -32,7 +32,7 @@ export const menuKeyboard = (admin = false, status = null, dailyReport = false, 
   // Only groups a super admin switched Daily report on for (lib/daily.js).
   dailyReport ? [btn('📥 របាយការណ៍ឆ្នោត', 'DRTYPE', 'primary')] : [],
   !status || (status.kind !== 'lifetime' && status.daysLeft <= WARN_DAYS) ? [btn('⭐ ការជាវ', 'BILLING')] : [],
-  agentExcel ? [btn('📊 Excel ភ្នាក់ងារ', 'XL')] : [],
+  agentExcel ? [btn('📊 Excel / 🖼 រូបភាព ភ្នាក់ងារ', 'XL')] : [],
   admin ? [btn('⚙️ Sync', 'SYNC_MENU')] : [],
   [btn('បិទ', 'CLOSE')],
 ]);
