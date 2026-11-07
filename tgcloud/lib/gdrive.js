@@ -110,7 +110,7 @@ export async function finishConnect(origin, params) {
     await db.update(gdriveAccounts).set(values).where(eq(gdriveAccounts.id, existing.id)).run();
     id = existing.id;
   } else {
-    const [row] = await db.insert(gdriveAccounts).values({ ...values, createdAt: now() }).returning();
+    const [row] = await db.insert(gdriveAccounts).values({ ...values, createdAt: now() }).returning().run();
     id = row.id;
   }
   // The group it was started from now uses it (switched on, its folder kept).
