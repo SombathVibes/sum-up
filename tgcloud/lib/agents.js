@@ -19,7 +19,7 @@ import { agentDailyTotals, agents } from '../schema.js';
 import { addDays, dayKey, now, parseDayKey, startOf, today } from './dates.js';
 import { groupsOfLogin } from './daily.js';
 import { listLogins, openSession } from './logins.js';
-import { copyExcelForGroup } from './onedrive.js';
+import { copyExcelForGroup } from './gdrive.js';
 import { getSetting, setSetting } from './store.js';
 import { memberHtml, memberValues, sheetHtml, sheetValues } from './sheetimage.js';
 import { Book, getNum, hasValue, put, putFormulaIfEmpty, serial } from './xlsx.js';
@@ -642,7 +642,7 @@ async function workbookSig(parts) {
 
 /**
  * Builds (or re-sends) an agent's month Excel to chatId. With `groupId`, a copy
- * also goes to that group's ☁️ OneDrive if it has one on (a failure there is
+ * also goes to that group's ☁️ Google Drive if it has one on (a failure there is
  * reported in the text and as `cloudError`, never stops the Telegram file).
  */
 export async function sendAgentExcel(login, agent, month, chatId, api, InputFile, isPrivate = true, { groupId = 0 } = {}) {
@@ -673,7 +673,7 @@ export async function sendAgentExcel(login, agent, month, chatId, api, InputFile
       return { text: cloud ? `${text}\n${cloud}` : text, reply_markup: back };
     } catch (e) {
       const cloudError = String(e?.message ?? e).slice(0, 200);
-      console.error('onedrive copy failed', groupId, cloudError);
+      console.error('gdrive copy failed', groupId, cloudError);
       return { text: `${text}\n⚠️ ☁️ ${cloudError}`, reply_markup: back, cloudError };
     }
   };

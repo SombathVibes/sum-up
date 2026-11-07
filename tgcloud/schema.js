@@ -225,13 +225,13 @@ export const activity = table('activity', {
   at: index('idx_activity_at').on(t.at),
 }));
 
-// ☁️ OneDrive accounts connected from the Mini App (Microsoft sign-in): the
+// ☁️ Google Drive accounts connected from the Mini App (Google sign-in): the
 // Excel files a group makes are copied to one. The refresh token is a
 // credential: never logged or sent to the Mini App.
-export const onedriveAccounts = table('onedrive_accounts', {
+export const gdriveAccounts = table('gdrive_accounts', {
   id:           integer('id').primaryKey({ autoIncrement: true }),
   ownerId:      integer('owner_id').notNull().default(0), // Telegram user who connected it
-  msId:         text('ms_id').notNull().default(''), // Microsoft account id: one row per account
+  googleId:     text('google_id').notNull().default(''), // Google account id (sub)
   email:        text('email').notNull().default(''),
   name:         text('name').notNull().default(''),
   refreshToken: text('refresh_token').notNull().default(''),
@@ -241,8 +241,8 @@ export const onedriveAccounts = table('onedrive_accounts', {
   createdAt:    integer('created_at').notNull().default(0),
 });
 
-// ☁️ Where a group's 📊 Excel files go: an account and a folder in its OneDrive.
-export const groupOnedrive = table('group_onedrive', {
+// ☁️ Where a group's 📊 Excel files go: an account and a folder in its Drive.
+export const groupGdrive = table('group_gdrive', {
   groupId:   integer('group_id').primaryKey(),
   enabled:   boolean('enabled').notNull().default(false),
   accountId: integer('account_id').notNull().default(0),

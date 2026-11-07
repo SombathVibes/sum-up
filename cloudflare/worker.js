@@ -29,7 +29,7 @@ import { runDue } from '../tgcloud/lib/schedule.js';
 import { pruneActivity } from '../tgcloud/lib/activity.js';
 import { alertRunProblems, checkBigDays, remindRenewals } from '../tgcloud/lib/alerts.js';
 import { runAutoSends } from '../tgcloud/lib/autosend.js';
-import { finishConnect } from '../tgcloud/lib/onedrive.js';
+import { finishConnect } from '../tgcloud/lib/gdrive.js';
 import { logActivity } from '../tgcloud/lib/activity.js';
 
 const MAX_AGE = 24 * 3600;
@@ -111,21 +111,21 @@ async function api(name, request, env) {
   }
 }
 
-/** ☁️ Microsoft's redirect after a OneDrive sign-in: saves the account, shows a short page. */
-async function onedriveCallback(url) {
+/** ☁️ Google's redirect after a Google Drive sign-in: saves the account, shows a short page. */
+async function gdriveCallback(url) {
   let r;
   try {
     r = await finishConnect(url.origin, url.searchParams);
     if (r.ok) {
-      await logActivity({ id: r.userId }, 'onedrive.connect', r.email, '');
+      await logActivity({ id: r.userId }, 'gdrive.connect', r.email, '');
       await callApi('sendMessage', { chat_id: r.userId, text: r.text }).catch(() => {});
     }
   } catch (e) {
-    console.error('✗ onedrive callback', e?.message ?? e);
+    console.error('✗ gdrive callback', e?.message ?? e);
     r = { ok: false, text: `មានបញ្ហា: ${String(e?.message ?? e).slice(0, 200)}` };
   }
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
-  const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>OneDrive</title>
+  const html = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Google Drive</title>
 <body style="font:17px/1.5 system-ui,sans-serif;max-width:32rem;margin:15vh auto;padding:0 16px;text-align:center;color-scheme:light dark">
 <div style="font-size:48px">${r.ok ? '☁️✅' : '⚠️'}</div><p>${esc(r.text)}</p></body>`;
   return new Response(html, { status: r.ok ? 200 : 400, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' } });
@@ -152,7 +152,7 @@ export default {
       const info = await callApi('getWebhookInfo');
       return json(200, { ok: true, webhook: info.url, pending: info.pending_update_count, allowed_updates: info.allowed_updates });
     }
-    if (request.method === 'GET' && url.pathname === '/onedrive/callback') return onedriveCallback(url);
+    if (request.method === 'GET' && url.pathname === '/gdrive/callback') return gdriveCallback(url);
     return env.ASSETS.fetch(request);
   },
 

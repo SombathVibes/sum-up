@@ -83,26 +83,29 @@ whole database can go back to any minute in that window — nothing to set up.
 Deploy `main` with `npm run deploy` (it sets its own webhook), and export the
 data from D1 if you need it (`npx wrangler d1 export sumup-eu --remote --output …`).
 
-## ☁️ OneDrive (each group's 📊 Excel copied to a OneDrive)
+## ☁️ Google Drive (each group's 📊 Excel copied to a Drive folder)
 
-One-time, by the owner (an app registration in Azure; free):
+One-time, by the owner, with any Google account (free; no billing needed):
 
-1. <https://portal.azure.com> → **App registrations** → **New registration**.
-   - Name: `SumUp bot`.
-   - Supported account types: **Accounts in any organizational directory and personal Microsoft accounts**.
-   - Redirect URI: **Web** → `https://<worker>.workers.dev/onedrive/callback`.
-2. On the app's page: copy the **Application (client) ID**.
-3. **Certificates & secrets** → **New client secret** (24 months) → copy its **Value**.
-4. **API permissions** → Add → Microsoft Graph → Delegated: `Files.ReadWrite`,
-   `User.Read`, `offline_access`.
+1. <https://console.cloud.google.com> → project picker → **New project** (`SumUp bot`).
+2. **APIs & Services → Library** → **Google Drive API** → **Enable**.
+3. **APIs & Services → OAuth consent screen** (Google Auth Platform) → Get started:
+   app name `SumUp bot`, your email, Audience **External**, finish.
+   - **Data access** → Add scopes: `.../auth/drive.file`, `openid`, `email`, `profile`.
+   - **Audience** → **Publish app** (→ In production). In "Testing" Google
+     drops the sign-in after 7 days. drive.file is not a sensitive scope, so no
+     review is needed.
+4. **Clients** (Credentials) → **Create client** → Web application.
+   Authorized redirect URI: `https://<worker>.workers.dev/gdrive/callback`.
+   Copy the **Client ID** and **Client secret**.
 5. Store both as Worker secrets (paste when asked):
    ```bash
-   npx wrangler secret put MS_CLIENT_ID
-   npx wrangler secret put MS_CLIENT_SECRET
+   npx wrangler secret put GOOGLE_CLIENT_ID
+   npx wrangler secret put GOOGLE_CLIENT_SECRET
    ```
 
-Then in the Mini App: a group → 📥 ឆ្នោត → ☁️ OneDrive → 🔗 ភ្ជាប់ OneDrive,
-sign in, Accept. Each group picks an account (one connected account can serve
-many groups) and a folder; files are `<folder>/<agent>-<YYYY-MM>.xlsx`,
-replaced when the month is made again. The client secret expires (24 months):
-make a new one and `secret put` it again.
+Then in the Mini App: a group → 📥 ឆ្នោត → ☁️ Google Drive → 🔗 ភ្ជាប់ Google
+Drive, sign in, Allow. Each group picks an account (one account can serve many
+groups) and a folder; files are `<folder>/<agent>-<YYYY-MM>.xlsx`, replaced
+when the month is made again. The bot only sees the folders and files it made
+(drive.file).
