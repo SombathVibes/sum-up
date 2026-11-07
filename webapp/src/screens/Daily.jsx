@@ -48,6 +48,8 @@ export default function DailyPanel({ group }) {
           <div className={`small ${data.config.enabled ? 'ok' : 'muted'}`}>{data.config.enabled ? `✅ បើក · 👤 ${data.config.memberName || data.config.memberCode}` : '⏸ បិទ'}</div>
           <p className="muted small">🔒 ក្រុមនេះប្រើ Login របស់អ្នកគ្រប់គ្រងផ្សេង — មានតែ Super admin ទេដែលអាចកែបាន។</p>
         </section>
+        {/* 📤 a group's managers set its auto-send, whoever added the login. */}
+        {data.config.loginId > 0 && data.autoSend && <AutoSend key={data.config.loginId} group={group} initial={data.autoSend} agents={data.agents ?? []} />}
       </main>
     );
   }

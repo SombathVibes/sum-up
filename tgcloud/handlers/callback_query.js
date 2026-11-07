@@ -319,8 +319,9 @@ async function handle(query) {
     if (key === 'XL' || key === 'XLSYNC' || /^XL[AMXID]_/.test(key)) {
       const cfg = await dailyConfig(group.id);
       const login = cfg.loginId ? await getLogin(cfg.loginId, { secret: true }) : null;
-      // Super admins: any login; managers: only the logins they added.
-      if (login && !ownsLogin(role === 'super' ? 'super' : await loginRole(query.from), query.from, login)) return refuse('🔒 Login នេះជារបស់អ្នកគ្រប់គ្រងផ្សេង។');
+      // 🛠 this group's managers (and super admins): its login's agents, whoever
+      // added the login; otherwise only someone who added it themselves.
+      if (login && !manager && !ownsLogin(await loginRole(query.from), query.from, login)) return refuse('🔒 Login នេះជារបស់អ្នកគ្រប់គ្រងផ្សេង។');
       if (!login) return show('⚠️ ក្រុមនេះមិនទាន់មាន Login ឆ្នោតទេ។', { reply_markup: { inline_keyboard: [[{ text: '⬅️ ត្រឡប់ក្រោយ', callback_data: 'BACK' }]] } });
       if (key === 'XL' || key === 'XLSYNC') return showScreen(await agentListScreen(login, { refresh: key === 'XLSYNC' }));
       const [, kind, id, month, day] = /^XL([AMXID])_(\d+)(?:_(\d{4}-\d\d)(?:-(\d\d))?)?$/.exec(key) ?? [];
@@ -392,10 +393,10 @@ async function handle(query) {
       // Menus are built for whoever tapped, so only admins see the Sync row.
       case 'BACK': {
         const [status, cfg, title] = await Promise.all([accessStatus(group), dailyConfig(group.id), scopedId ? groupTitle(group) : null]);
-        // 📊 Excel / 🖼 only in the private panel, for groups that follow a login
-        // this admin may use (super admins: any; managers: their own).
+        // 📊 Excel / 🖼 only in the private panel, for groups that follow a login:
+        // this group's 🛠 managers (and super admins), or whoever added the login.
         const excel = !!scopedId && !!cfg.loginId
-          && ownsLogin(role === 'super' ? 'super' : await loginRole(query.from), query.from, await getLogin(cfg.loginId));
+          && (manager || ownsLogin(await loginRole(query.from), query.from, await getLogin(cfg.loginId)));
         const { inline_keyboard } = menuKeyboard(manager, status, cfg.enabled && !!cfg.memberCode, excel);
         // In the private panel: the group's name on top, and a way back to all groups.
         if (scopedId) {
