@@ -1,0 +1,18 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>:root{color-scheme:light dark}body{font:16px/1.6 system-ui,sans-serif;max-width:40rem;margin:0 auto;padding:32px 16px;background:Canvas;color:CanvasText}h1{font-size:1.6rem}h2{font-size:1.1rem;margin-top:1.6em}a{color:#2a7de1}</style><title>SumUp bot privacy</title></head><body>
+<h1>Privacy policy</h1>
+<p>This policy covers the SumUp Telegram bot and its Mini App (“the bot”).</p>
+<h2>What the bot stores</h2>
+<ul>
+<li>For each Telegram group it is added to: the group's id and name, and the payment messages it sums up (amounts, times, senders as shown in the message).</li>
+<li>For admins: Telegram user id, name and their role in each group.</li>
+<li>Report settings and the reports it makes.</li>
+</ul>
+<h2>Google Drive</h2>
+<p>If an admin connects Google Drive, the bot asks only for the <code>drive.file</code> permission and your email and name. With it the bot can only see and change the folders and files it creates itself (the Excel reports). It cannot see any other file in your Drive.</p>
+<p>The bot keeps the Google sign-in token in its database to upload future reports, and uses Google data for nothing else. It does not sell, share or transfer Google user data to anyone, and does not use it for advertising. The bot's use of information received from Google APIs adheres to the <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>, including the Limited Use requirements.</p>
+<h2>Removing your data</h2>
+<p>Disconnecting the account in the Mini App (☁️ Google Drive → 🗑) deletes the stored token and revokes the bot's access. You can also remove access at any time at <a href="https://myaccount.google.com/permissions">myaccount.google.com/permissions</a>. To have a group's data deleted, ask the bot's owner through the bot in Telegram.</p>
+<h2>Where it runs</h2>
+<p>The bot runs on Cloudflare Workers with its database in Western Europe. Data is sent only to Telegram, Google (when Drive is connected) and the lottery report services a group's admins set up.</p>
+<p>Updated 8 November 2026.</p>
+</body></html>

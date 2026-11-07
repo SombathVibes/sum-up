@@ -91,6 +91,9 @@ One-time, by the owner, with any Google account (free; no billing needed):
 2. **APIs & Services → Library** → **Google Drive API** → **Enable**.
 3. **APIs & Services → OAuth consent screen** (Google Auth Platform) → Get started:
    app name `SumUp bot`, your email, Audience **External**, finish.
+   - **Branding**: homepage `https://<worker>.workers.dev/about`, privacy policy
+     `https://<worker>.workers.dev/privacy` (webapp/public/about.html, privacy.html),
+     authorized domain `<worker>.workers.dev`'s domain (`<account>.workers.dev`). No logo.
    - **Data access** → Add scopes: `.../auth/drive.file`, `openid`, `email`, `profile`.
    - **Audience** → **Publish app** (→ In production). In "Testing" Google
      drops the sign-in after 7 days. drive.file is not a sensitive scope, so no
