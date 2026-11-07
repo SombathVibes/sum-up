@@ -21,6 +21,10 @@ import e_loginSave from '../tgcloud/endpoints/loginSave.js';
 import e_loginSync from '../tgcloud/endpoints/loginSync.js';
 import e_logins from '../tgcloud/endpoints/logins.js';
 import e_me from '../tgcloud/endpoints/me.js';
+import e_onedriveConnect from '../tgcloud/endpoints/onedriveConnect.js';
+import e_onedriveGet from '../tgcloud/endpoints/onedriveGet.js';
+import e_onedriveRemove from '../tgcloud/endpoints/onedriveRemove.js';
+import e_onedriveSave from '../tgcloud/endpoints/onedriveSave.js';
 import e_renew from '../tgcloud/endpoints/renew.js';
 import e_sendCsv from '../tgcloud/endpoints/sendCsv.js';
 import e_settings from '../tgcloud/endpoints/settings.js';
@@ -32,4 +36,4 @@ import e_teamSuper from '../tgcloud/endpoints/teamSuper.js';
 import e_uploadFile from '../tgcloud/endpoints/uploadFile.js';
 
 export const handlers = { "callback_query": h_callback_query, "message": h_message, "pre_checkout_query": h_pre_checkout_query, "subscription": h_subscription };
-export const endpoints = { "activity": e_activity, "autoSendSave": e_autoSendSave, "dailyGet": e_dailyGet, "dailySave": e_dailySave, "groupHistory": e_groupHistory, "groupLottery": e_groupLottery, "groupPayments": e_groupPayments, "groupReport": e_groupReport, "groups": e_groups, "lifetime": e_lifetime, "loginDefaults": e_loginDefaults, "loginDelete": e_loginDelete, "loginLinks": e_loginLinks, "loginRun": e_loginRun, "loginSave": e_loginSave, "loginSync": e_loginSync, "logins": e_logins, "me": e_me, "renew": e_renew, "sendCsv": e_sendCsv, "settings": e_settings, "settingsSave": e_settingsSave, "team": e_team, "teamRemove": e_teamRemove, "teamRole": e_teamRole, "teamSuper": e_teamSuper, "uploadFile": e_uploadFile };
+export const endpoints = { "activity": e_activity, "autoSendSave": e_autoSendSave, "dailyGet": e_dailyGet, "dailySave": e_dailySave, "groupHistory": e_groupHistory, "groupLottery": e_groupLottery, "groupPayments": e_groupPayments, "groupReport": e_groupReport, "groups": e_groups, "lifetime": e_lifetime, "loginDefaults": e_loginDefaults, "loginDelete": e_loginDelete, "loginLinks": e_loginLinks, "loginRun": e_loginRun, "loginSave": e_loginSave, "loginSync": e_loginSync, "logins": e_logins, "me": e_me, "onedriveConnect": e_onedriveConnect, "onedriveGet": e_onedriveGet, "onedriveRemove": e_onedriveRemove, "onedriveSave": e_onedriveSave, "renew": e_renew, "sendCsv": e_sendCsv, "settings": e_settings, "settingsSave": e_settingsSave, "team": e_team, "teamRemove": e_teamRemove, "teamRole": e_teamRole, "teamSuper": e_teamSuper, "uploadFile": e_uploadFile };

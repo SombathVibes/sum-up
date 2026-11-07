@@ -20,7 +20,7 @@
     "directory": "./webapp/dist",
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/telegram", "/api/*", "/setup"]
+    "run_worker_first": ["/telegram", "/api/*", "/setup", "/onedrive/*"]
   },
   "d1_databases": [
     {

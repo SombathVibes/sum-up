@@ -380,7 +380,7 @@ async function handle(query) {
       }
       await show(`⏳ កំពុងរៀបចំ Excel ${agent.username} · ${month}…`);
       try {
-        return showScreen(await sendAgentExcel(login, agent, month, query.from.id, api, InputFile, isPrivate));
+        return showScreen(await sendAgentExcel(login, agent, month, query.from.id, api, InputFile, isPrivate, { groupId: group.id }));
       } catch (e) {
         console.error('agent excel failed', e);
         // The bot can only message people who have started it.

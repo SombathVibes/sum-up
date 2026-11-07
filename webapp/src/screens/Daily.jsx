@@ -8,6 +8,7 @@ import { call } from '../api.js';
 import { Switch, kh } from './Logins.jsx';
 import Skeleton from '../components/Skeleton.jsx';
 import AutoSend from './AutoSend.jsx';
+import OneDrive from './OneDrive.jsx';
 
 export default function DailyPanel({ group }) {
   const [data, setData] = useState(null);
@@ -50,6 +51,7 @@ export default function DailyPanel({ group }) {
         </section>
         {/* 📤 a group's managers set its auto-send, whoever added the login. */}
         {data.config.loginId > 0 && data.autoSend && <AutoSend key={data.config.loginId} group={group} initial={data.autoSend} agents={data.agents ?? []} />}
+        {data.config.loginId > 0 && <OneDrive group={group} />}
       </main>
     );
   }
@@ -89,6 +91,7 @@ export default function DailyPanel({ group }) {
       </section>
 
       {data.config.loginId > 0 && data.autoSend && <AutoSend key={data.config.loginId} group={group} initial={data.autoSend} agents={data.agents ?? []} />}
+        {data.config.loginId > 0 && <OneDrive group={group} />}
 
       {error && <p className="error">{error.message}</p>}
       {note && <p className="small">{note}</p>}

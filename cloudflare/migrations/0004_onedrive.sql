@@ -1,0 +1,3 @@
+-- ☁️ OneDrive: connected accounts and each group's folder.
+CREATE TABLE IF NOT EXISTS "group_onedrive" ("group_id" INTEGER PRIMARY KEY, "enabled" INTEGER NOT NULL DEFAULT 0, "account_id" INTEGER NOT NULL DEFAULT 0, "folder" TEXT NOT NULL DEFAULT '', "set_by" INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS "onedrive_accounts" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "owner_id" INTEGER NOT NULL DEFAULT 0, "ms_id" TEXT NOT NULL DEFAULT '', "email" TEXT NOT NULL DEFAULT '', "name" TEXT NOT NULL DEFAULT '', "refresh_token" TEXT NOT NULL DEFAULT '', "access_token" TEXT NOT NULL DEFAULT '', "expires_at" INTEGER NOT NULL DEFAULT 0, "error" TEXT NOT NULL DEFAULT '', "created_at" INTEGER NOT NULL DEFAULT 0);

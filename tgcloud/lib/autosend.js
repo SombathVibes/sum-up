@@ -65,7 +65,7 @@ async function tell(userId, text) {
 }
 
 /** One agent's today into the group: the 🖼 album and/or the 📊 Excel. Returns problems ([] when all went). */
-async function sendAgent(login, agent, chatId, day, { sendImage, sendExcel }) {
+async function sendAgent(login, agent, chatId, day, { sendImage, sendExcel, groupId }) {
   const problems = [];
   if (sendImage) {
     try {
@@ -83,8 +83,9 @@ async function sendAgent(login, agent, chatId, day, { sendImage, sendExcel }) {
   }
   if (sendExcel) {
     try {
-      const screen = await sendAgentExcel(login, agent, day.slice(0, 7), chatId, api, InputFile, true);
+      const screen = await sendAgentExcel(login, agent, day.slice(0, 7), chatId, api, InputFile, true, { groupId });
       if (!screen.text.startsWith('✅')) problems.push(`📊 ${agent.username}: ${screen.text}`);
+      else if (screen.cloudError) problems.push(`☁️ ${agent.username}: ${screen.cloudError}`);
     } catch (e) {
       problems.push(`📊 ${agent.username}: ${String(e.message ?? e).slice(0, 200)}`);
     }

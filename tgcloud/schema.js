@@ -224,3 +224,28 @@ export const activity = table('activity', {
 }, (t) => ({
   at: index('idx_activity_at').on(t.at),
 }));
+
+// ☁️ OneDrive accounts connected from the Mini App (Microsoft sign-in): the
+// Excel files a group makes are copied to one. The refresh token is a
+// credential: never logged or sent to the Mini App.
+export const onedriveAccounts = table('onedrive_accounts', {
+  id:           integer('id').primaryKey({ autoIncrement: true }),
+  ownerId:      integer('owner_id').notNull().default(0), // Telegram user who connected it
+  msId:         text('ms_id').notNull().default(''), // Microsoft account id: one row per account
+  email:        text('email').notNull().default(''),
+  name:         text('name').notNull().default(''),
+  refreshToken: text('refresh_token').notNull().default(''),
+  accessToken:  text('access_token').notNull().default(''),
+  expiresAt:    integer('expires_at').notNull().default(0), // unix seconds
+  error:        text('error').notNull().default(''), // last failure ('' when fine)
+  createdAt:    integer('created_at').notNull().default(0),
+});
+
+// ☁️ Where a group's 📊 Excel files go: an account and a folder in its OneDrive.
+export const groupOnedrive = table('group_onedrive', {
+  groupId:   integer('group_id').primaryKey(),
+  enabled:   boolean('enabled').notNull().default(false),
+  accountId: integer('account_id').notNull().default(0),
+  folder:    text('folder').notNull().default(''),
+  setBy:     integer('set_by').notNull().default(0),
+});

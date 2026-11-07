@@ -19,6 +19,7 @@ import { agentDailyTotals, agents } from '../schema.js';
 import { addDays, dayKey, now, parseDayKey, startOf, today } from './dates.js';
 import { groupsOfLogin } from './daily.js';
 import { listLogins, openSession } from './logins.js';
+import { copyExcelForGroup } from './onedrive.js';
 import { getSetting, setSetting } from './store.js';
 import { memberHtml, memberValues, sheetHtml, sheetValues } from './sheetimage.js';
 import { Book, getNum, hasValue, put, putFormulaIfEmpty, serial } from './xlsx.js';
@@ -639,7 +640,12 @@ async function workbookSig(parts) {
   return [...new Uint8Array(hash)].slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-export async function sendAgentExcel(login, agent, month, chatId, api, InputFile, isPrivate = true) {
+/**
+ * Builds (or re-sends) an agent's month Excel to chatId. With `groupId`, a copy
+ * also goes to that group's ☁️ OneDrive if it has one on (a failure there is
+ * reported in the text and as `cloudError`, never stops the Telegram file).
+ */
+export async function sendAgentExcel(login, agent, month, chatId, api, InputFile, isPrivate = true, { groupId = 0 } = {}) {
   const back = { inline_keyboard: [[btn('🔄 ម្ដងទៀត', `XLM_${agent.id}_${month}`)], [btn('⬅️ ត្រឡប់ក្រោយ', `XLX_${agent.id}`)]] };
   const fileId = await templateFileId();
   if (!fileId) return { text: '⚠️ មិនទាន់មាន template ទេ។ Super admin ផ្ញើ template.xlsx ជាមួយ caption /settemplate ក្នុង chat ជាមួយ bot។', reply_markup: back };
@@ -659,10 +665,22 @@ export async function sendAgentExcel(login, agent, month, chatId, api, InputFile
   } catch {
     // broken: build it again
   }
+  const name = `${agent.username}-${month}.xlsx`;
+  const done = async (getBytes) => {
+    const text = `✅ បានផ្ញើ Excel ${agent.username} · ${monthLabel(month)}${isPrivate ? '' : ' ទៅ chat ផ្ទាល់របស់អ្នក'}`;
+    try {
+      const cloud = await copyExcelForGroup(groupId, { sig, name, getBytes });
+      return { text: cloud ? `${text}\n${cloud}` : text, reply_markup: back };
+    } catch (e) {
+      const cloudError = String(e?.message ?? e).slice(0, 200);
+      console.error('onedrive copy failed', groupId, cloudError);
+      return { text: `${text}\n⚠️ ☁️ ${cloudError}`, reply_markup: back, cloudError };
+    }
+  };
   if (sent?.sig === sig) {
     try {
       await api.sendDocument({ chat_id: chatId, document: sent.fileId, caption });
-      return { text: `✅ បានផ្ញើ Excel ${agent.username} · ${monthLabel(month)}${isPrivate ? '' : ' ទៅ chat ផ្ទាល់របស់អ្នក'}`, reply_markup: back };
+      return await done(() => api.getFileContent(sent.fileId));
     } catch (e) {
       if (e?.code === 403) throw e; // the user hasn't started the bot: the caller says so
       console.warn('saved Excel refused, building it again:', e?.message ?? e);
@@ -671,9 +689,9 @@ export async function sendAgentExcel(login, agent, month, chatId, api, InputFile
   const bytes = await buildWorkbook(await templateBytes(api, fileId), agent, month, r.days, r.members);
   const message = await api.sendDocument({
     chat_id: chatId,
-    document: new InputFile(bytes, `${agent.username}-${month}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
+    document: new InputFile(bytes, name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }),
     caption,
   });
   if (message?.document?.file_id) await setSetting(sentKey, JSON.stringify({ sig, fileId: message.document.file_id }));
-  return { text: `✅ បានផ្ញើ Excel ${agent.username} · ${monthLabel(month)}${isPrivate ? '' : ' ទៅ chat ផ្ទាល់របស់អ្នក'}`, reply_markup: back };
+  return done(() => bytes);
 }

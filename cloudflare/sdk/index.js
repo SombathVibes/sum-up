@@ -20,12 +20,17 @@ export function takeStats() {
 let botToken = '';
 let apiBase = 'https://api.telegram.org';
 let browser = null;
+let envRef = {};
+
+/** A Worker secret or var by name (e.g. MS_CLIENT_ID for ☁️ OneDrive), '' if unset. */
+export const secret = (name) => String(envRef[name] ?? '');
 
 /** The Worker's env for this request: BOT_TOKEN (secret), DB (D1), and TELEGRAM_API for tests. */
 export function bindEnv(env) {
   botToken = env.BOT_TOKEN ?? '';
   apiBase = env.TELEGRAM_API || 'https://api.telegram.org';
   browser = env.BROWSER ?? null;
+  envRef = env;
   // A D1 session per request: with read replication on, its reads go to the
   // nearest copy (the webhook runs near Telegram, in Europe; the Mini App near
   // its users) and writes to the primary, in order within the request. With

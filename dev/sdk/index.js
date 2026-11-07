@@ -76,3 +76,6 @@ export async function renderImage() {
 export async function renderImages() {
   throw new Error('Images are made on Cloudflare only (Browser Rendering).');
 }
+
+/** A secret or var by name (process.env here), '' if unset. */
+export const secret = (name) => String(process.env[name] ?? '');
